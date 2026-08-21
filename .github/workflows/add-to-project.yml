@@ -1,0 +1,12 @@
+name: Agregar issues al Project
+on:
+  issues:
+    types: [opened]
+jobs:
+  add-to-project:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/add-to-project@v1
+        with:
+          project-url: https://github.com/orgs/tds-g3-2s2026/projects/1
+          github-token: ${{ secrets.ADD_TO_PROJECT_PAT }}
