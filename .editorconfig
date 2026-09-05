@@ -1,9 +1,36 @@
+# EditorConfig - https://editorconfig.org
+# Synced from udesa-x-platform to every repo. Do not edit the local copy:
+# edit the source in udesa-x-platform and run the sync.
+
 root = true
 
 [*]
 charset = utf-8
-indent_style = space
-indent_size = 2
 end_of_line = lf
 insert_final_newline = true
 trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+max_line_length = 100
+
+[*.py]
+indent_size = 4
+max_line_length = 100
+
+[*.{md,markdown}]
+trim_trailing_whitespace = false
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.{json,jsonc}]
+indent_size = 2
+
+[Makefile]
+indent_style = tab
+
+[*.sh]
+indent_size = 2
+
+[*.{tf,tfvars}]
+indent_size = 2

@@ -4,9 +4,9 @@ on:
     types: [opened, reopened]
 jobs:
   add-to-project:
-    # Solo las issues del equipo entran al tablero. Los repos son publicos por
-    # el ADR-003, asi que cualquiera con una cuenta de GitHub puede abrir una, y
-    # sin este filtro cae en el Kanban que revisa el tutor.
+    # Only the team's issues reach the board. The repos are public by ADR-003,
+    # so anyone with a GitHub account can open one and without this filter it
+    # lands on the Kanban the tutor reviews.
     if: contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association)
     runs-on: ubuntu-latest
     steps:
