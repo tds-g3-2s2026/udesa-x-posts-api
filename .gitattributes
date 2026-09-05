@@ -1,0 +1,20 @@
+# Windows, macOS and Linux all check this repo out and the CI runs on Linux.
+# Versioned here so it does not depend on each machine's core.autocrlf.
+* text=auto eol=lf
+
+# A .sh with CRLF fails on Linux with an unhelpful "bad interpreter" error.
+*.sh   text eol=lf
+
+# Binaries: git must leave them alone.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.avif binary
+*.ico  binary
+*.pdf  binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.zip  binary
