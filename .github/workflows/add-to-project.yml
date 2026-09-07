@@ -4,10 +4,10 @@ on:
     types: [opened, reopened]
 jobs:
   add-to-project:
-    # Only the team's issues reach the board. The repos are public by ADR-003,
-    # so anyone with a GitHub account can open one and without this filter it
-    # lands on the Kanban the tutor reviews.
-    if: contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association)
+    # Only the team's issues reach the board: the repos are public by ADR-003.
+    # Matched on the login and not on author_association, which the webhook
+    # derives from public membership and reports as NONE while ours is private.
+    if: contains(fromJSON('["tommycass", "FedeTrejo", "joaquinleondev", "alejovillores"]'), github.event.issue.user.login)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/add-to-project@v2
