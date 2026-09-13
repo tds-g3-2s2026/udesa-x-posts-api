@@ -1,0 +1,13 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  ci:
+    uses: tds-g3-2s2026/udesa-x-platform/.github/workflows/ci-python.yml@main
+    secrets: inherit
+    with:
+      # ARQUITECTURA.md turns the gate on for the backend services in S3. Below
+      # the minimum the PR goes red and cannot be merged.
+      bloquear-por-cobertura: true
