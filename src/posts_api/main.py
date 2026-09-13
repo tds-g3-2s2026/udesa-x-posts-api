@@ -7,7 +7,11 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from posts_api.api.health import router as health_router
 from posts_api.config.settings import get_settings
-from posts_api.infrastructure.database.session import build_session_factory
+
+# Imported for its side effect: the tables register themselves on Base.metadata
+# when the module loads, and create_all only sees what is registered.
+from posts_api.infrastructure.database import models  # noqa: F401
+from posts_api.infrastructure.database.session import Base, build_session_factory
 
 
 @asynccontextmanager
@@ -28,6 +32,11 @@ async def lifespan(app: FastAPI):
     app.state.engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     app.state.session_factory = build_session_factory(app.state.engine)
     app.state.redis = Redis.from_url(settings.redis_url)
+
+    # No Alembic yet: the service is not deployed, so there is no live data a
+    # migration would protect.
+    async with app.state.engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
 
     yield
 

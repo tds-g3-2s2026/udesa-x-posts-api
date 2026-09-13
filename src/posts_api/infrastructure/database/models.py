@@ -1,0 +1,94 @@
+"""The SQLAlchemy tables.
+
+All of them in one module because they reference each other and the metadata is
+read as a whole: a model declared somewhere that never gets imported is
+invisible when the tables are created.
+
+These classes are storage. The rules about what the graph allows live on the
+dataclasses in `app/models/follow.py`.
+"""
+
+import uuid
+from datetime import datetime
+
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import Mapped, mapped_column
+
+from posts_api.infrastructure.database.session import Base
+
+
+class UserProfileModel(Base):
+    """Local projection of a user. users-api owns the account."""
+
+    __tablename__ = "user_profiles"
+    __table_args__ = (
+        CheckConstraint(
+            "visibility IN ('public', 'protected')", name="ck_user_profiles_visibility"
+        ),
+    )
+
+    # Not generated here: it is the same id the account has in users-api.
+    id: Mapped[uuid.UUID] = mapped_column(postgresql.UUID(as_uuid=True), primary_key=True)
+    handle: Mapped[str] = mapped_column(String(16), unique=True, index=True)
+
+    # Text plus a CHECK rather than a native ENUM: adding a value is then an
+    # ordinary change instead of an ALTER TYPE outside a transaction.
+    visibility: Mapped[str] = mapped_column(String(16), default="public", server_default="public")
+
+    # Stored as columns and updated inside the same transaction as the follow,
+    # instead of counted on every read.
+    followers_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    following_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
+class FollowModel(Base):
+    __tablename__ = "follows"
+    __table_args__ = (
+        # The pair is the identity of the row, so following twice cannot create
+        # a second one; nobody follows themselves.
+        CheckConstraint("follower_id <> followee_id", name="ck_follows_not_self"),
+    )
+
+    follower_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("user_profiles.id"), primary_key=True
+    )
+    followee_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("user_profiles.id"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class FollowRequestModel(Base):
+    __tablename__ = "follow_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected')", name="ck_follow_requests_status"
+        ),
+        # Only one open request per pair. Resolved ones stay as history.
+        UniqueConstraint(
+            "requester_id", "target_id", "status", name="uq_follow_requests_open_pair"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    requester_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("user_profiles.id"), index=True
+    )
+    # Indexed because the pending list is queried by target: "who asked to
+    # follow me" is the screen this table exists for.
+    target_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("user_profiles.id"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
