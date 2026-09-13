@@ -14,17 +14,18 @@ HAS_SERVICES = bool(os.getenv("DATABASE_URL") and os.getenv("REDIS_URL"))
 
 requires_services = pytest.mark.skipif(not HAS_SERVICES, reason="needs DATABASE_URL and REDIS_URL")
 
-# The tests mint their own key pair so they never depend on users-api running.
-# setdefault leaves a real key alone when one is passed in.
+# The tests mint their own key pair and overwrite whatever the environment
+# carries: signing needs the private half, so a key from outside is unusable
+# here. The CI sets its own throwaway key for the service, and this replaces it
+# for the duration of the suite.
 TEST_PRIVATE_KEY = Ed25519PrivateKey.generate()
-os.environ.setdefault(
-    "JWT_PUBLIC_KEY",
+os.environ["JWT_PUBLIC_KEY"] = (
     TEST_PRIVATE_KEY.public_key()
     .public_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo,
     )
-    .decode(),
+    .decode()
 )
 
 
