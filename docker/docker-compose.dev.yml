@@ -1,0 +1,66 @@
+name: udesa-x-posts-api
+
+services:
+  posts-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8001:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://posts:posts@postgres:5432/posts
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # No source volume on purpose: mounting it would replace what the image
+  # carries and stop testing the real artifact.
+  tests:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: test
+    environment:
+      DATABASE_URL: postgresql+asyncpg://posts:posts@postgres:5432/posts
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Without this it would start on every `docker compose up`.
+    profiles: ["test"]
+
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: posts
+      POSTGRES_PASSWORD: posts
+      POSTGRES_DB: posts
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U posts -d posts"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      # PostgreSQL 18 stores data in a version-specific subdirectory, so the mount
+      # goes on /var/lib/postgresql and not on /data as in earlier versions.
+      - postgres-data:/var/lib/postgresql
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:
