@@ -10,6 +10,7 @@ dependencies = [
     "asyncpg>=0.30",
     "redis>=5.2",
     "pydantic-settings>=2.7",
+    "pyjwt[crypto]>=2.10",
 ]
 
 [dependency-groups]
