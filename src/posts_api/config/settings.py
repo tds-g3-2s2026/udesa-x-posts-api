@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: str
 
+    # Ed25519 public key in PEM format, the other half of the key users-api
+    # signs with. Without it the service cannot tell a real token from a forged
+    # one, so it refuses to start rather than accept everything.
+    jwt_public_key: str
+
     log_level: str = "INFO"
 
 
