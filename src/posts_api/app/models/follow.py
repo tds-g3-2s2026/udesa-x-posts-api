@@ -42,7 +42,7 @@ class UserProfile:
 
     @property
     def needs_approval(self) -> bool:
-        """A protected account turns a follow into a pending request (E3-H1)."""
+        """A protected account turns a follow into a pending request."""
         return self.visibility is ProfileVisibility.PROTECTED
 
 
