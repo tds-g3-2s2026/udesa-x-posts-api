@@ -38,7 +38,11 @@ class UserProfileModel(Base):
 
     # Not generated here: it is the same id the account has in users-api.
     id: Mapped[uuid.UUID] = mapped_column(postgresql.UUID(as_uuid=True), primary_key=True)
-    handle: Mapped[str] = mapped_column(String(16), unique=True, index=True)
+
+    # Empty until a copy of the account arrives from users-api: a valid token
+    # carries the id and nothing else. PostgreSQL allows repeated NULLs under a
+    # unique index, so the constraint still holds once the handles are there.
+    handle: Mapped[str | None] = mapped_column(String(16), unique=True, index=True, default=None)
 
     # Text plus a CHECK rather than a native ENUM: adding a value is then an
     # ordinary change instead of an ALTER TYPE outside a transaction.
