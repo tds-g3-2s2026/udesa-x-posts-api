@@ -7,7 +7,7 @@ changes, it changes here and nowhere else.
 
 import uuid
 
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.app.models.follow import ProfileVisibility, UserProfile
@@ -57,10 +57,33 @@ class FollowRepository:
         self._session.add(FollowModel(follower_id=follower_id, followee_id=followee_id))
         await self._session.flush()
 
-    async def remove_follow(self, follower_id: uuid.UUID, followee_id: uuid.UUID) -> None:
-        await self._session.execute(
+    async def remove_follow(self, follower_id: uuid.UUID, followee_id: uuid.UUID) -> bool:
+        """Delete the relationship and report whether there was one to delete."""
+        result = await self._session.execute(
             delete(FollowModel).where(
                 FollowModel.follower_id == follower_id,
                 FollowModel.followee_id == followee_id,
             )
+        )
+        return result.rowcount > 0
+
+    async def move_counters(
+        self, follower_id: uuid.UUID, followee_id: uuid.UUID, *, by: int
+    ) -> None:
+        """Add `by` to both sides of the relationship.
+
+        The arithmetic is written as SQL and not read into Python first. Two
+        follows arriving at the same time each read the same value if the sum
+        happens here, and one of the two increments is lost; `count + 1` inside
+        the UPDATE makes the database do the sum over the row it has locked.
+        """
+        await self._session.execute(
+            update(UserProfileModel)
+            .where(UserProfileModel.id == followee_id)
+            .values(followers_count=UserProfileModel.followers_count + by)
+        )
+        await self._session.execute(
+            update(UserProfileModel)
+            .where(UserProfileModel.id == follower_id)
+            .values(following_count=UserProfileModel.following_count + by)
         )

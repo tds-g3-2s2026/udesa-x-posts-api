@@ -15,6 +15,7 @@ from typing import Annotated
 import jwt
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.app.errors import ProblemError
@@ -29,6 +30,14 @@ async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
 
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+def get_redis(request: Request) -> Redis:
+    """The connection opened once in the lifespan, not a new one per request."""
+    return request.app.state.redis
+
+
+RedisDep = Annotated[Redis, Depends(get_redis)]
 
 # Rejects a missing or malformed Authorization header before anything else runs.
 bearer_scheme = HTTPBearer()
