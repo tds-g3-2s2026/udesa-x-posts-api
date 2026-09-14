@@ -35,7 +35,7 @@ class UserProfile:
     """
 
     id: uuid.UUID
-    handle: str
+    handle: str | None = None
     visibility: ProfileVisibility = ProfileVisibility.PUBLIC
     followers_count: int = 0
     following_count: int = 0
