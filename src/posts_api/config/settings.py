@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     # one, so it refuses to start rather than accept everything.
     jwt_public_key: str
 
+    # E3-H1 CA.5: fifty follows per hour. They are settings and not constants
+    # so a load test can lower them without touching the code.
+    follow_rate_limit: int = 50
+    follow_rate_window_seconds: int = 3600
+
     log_level: str = "INFO"
 
 
