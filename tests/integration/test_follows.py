@@ -29,7 +29,9 @@ async def api():
         await app.state.redis.flushdb()
 
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        # The prefix travels in the base URL so each test keeps writing the path
+        # it cares about, and the request that goes out is the real one.
+        async with httpx.AsyncClient(transport=transport, base_url="http://test/api") as client:
             yield client
 
 
