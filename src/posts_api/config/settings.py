@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
 
+# Every endpoint reachable from outside hangs under this prefix: the cluster has
+# a single Ingress for the whole system and routes by path, and `users-api` and
+# `posts-api` both publish top-level routes that would otherwise collide.
+API_PREFIX = "/api"
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
