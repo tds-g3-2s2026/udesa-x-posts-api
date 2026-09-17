@@ -11,7 +11,7 @@ from posts_api.api.follows import router as follows_router
 from posts_api.api.health import router as health_router
 from posts_api.app.errors import ProblemError
 from posts_api.app.security import load_public_key
-from posts_api.config.settings import get_settings
+from posts_api.config.settings import API_PREFIX, get_settings
 
 # Imported for its side effect: the tables register themselves on Base.metadata
 # when the module loads, and create_all only sees what is registered.
@@ -55,5 +55,8 @@ app = FastAPI(title="UdeSA-X Posts API", version="0.1.0", lifespan=lifespan)
 app.add_exception_handler(ProblemError, problem_error_handler)
 app.add_exception_handler(RequestValidationError, validation_error_handler)
 
+# The healthcheck stays out of the prefix: the Kubernetes probes reach the pod
+# directly and never pass through the Ingress.
 app.include_router(health_router)
-app.include_router(follows_router)
+
+app.include_router(follows_router, prefix=API_PREFIX)
