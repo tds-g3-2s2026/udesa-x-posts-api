@@ -25,6 +25,20 @@ class FollowRequestStatus(StrEnum):
     REJECTED = "rejected"
 
 
+@dataclass(frozen=True)
+class Account:
+    """Who is behind a request, as the token describes them.
+
+    Not the same as `UserProfile`: that one is what this service stores about a
+    user, and this one is what arrives signed on every call. The handle can be
+    missing, because a token issued before users-api started sending it is still
+    valid until it expires.
+    """
+
+    id: uuid.UUID
+    handle: str | None = None
+
+
 @dataclass
 class UserProfile:
     """What this service knows about a user: a local copy, not the source of truth.

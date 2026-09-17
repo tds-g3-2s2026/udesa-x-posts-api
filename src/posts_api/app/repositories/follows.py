@@ -10,7 +10,7 @@ import uuid
 from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from posts_api.app.models.follow import ProfileVisibility, UserProfile
+from posts_api.app.models.follow import Account, ProfileVisibility, UserProfile
 from posts_api.infrastructure.database.models import FollowModel, UserProfileModel
 
 
@@ -35,17 +35,25 @@ class FollowRepository:
         row = await self._session.get(UserProfileModel, user_id)
         return _to_profile(row) if row is not None else None
 
-    async def ensure_profile(self, user_id: uuid.UUID) -> UserProfile:
+    async def ensure_profile(self, account: Account) -> UserProfile:
         """The profile of whoever is signed in, created the first time they appear.
 
         No copy of the accounts arrives from users-api yet, so the first
-        authenticated request a user makes is what puts them on the graph. The
-        handle stays empty until that copy exists.
+        authenticated request a user makes is what puts them on the graph, with
+        the handle the token carries.
+
+        An existing profile only gets its handle filled in when it is missing:
+        a handle is fixed at registration and users-api refuses to change it, so
+        a stored one can never be out of date, and overwriting it would only
+        risk clashing with the unique index for nothing.
         """
-        row = await self._session.get(UserProfileModel, user_id)
+        row = await self._session.get(UserProfileModel, account.id)
         if row is None:
-            row = UserProfileModel(id=user_id)
+            row = UserProfileModel(id=account.id, handle=account.handle)
             self._session.add(row)
+            await self._session.flush()
+        elif row.handle is None and account.handle is not None:
+            row.handle = account.handle
             await self._session.flush()
         return _to_profile(row)
 
