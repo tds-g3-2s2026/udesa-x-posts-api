@@ -1,0 +1,11 @@
+name: Cerrar la issue padre
+
+on:
+  issues:
+    types: [closed]
+
+jobs:
+  cerrar:
+    uses: tds-g3-2s2026/udesa-x-platform/.github/workflows/cerrar-padre.yml@main
+    secrets:
+      token: ${{ secrets.ADD_TO_PROJECT_PAT }}
