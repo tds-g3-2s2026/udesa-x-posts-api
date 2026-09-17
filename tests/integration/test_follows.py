@@ -55,7 +55,17 @@ async def counters_of(user_id: uuid.UUID) -> tuple[int, int]:
 
 
 def signed_in_as(user_id: uuid.UUID) -> dict[str, str]:
-    return {"Authorization": f"Bearer {issue_token(user_id)}"}
+    """A token for that account, with its own handle.
+
+    The handle is derived from the id because the column is unique: two accounts
+    cannot share one, and a fixed value would blow up the moment a test signs in
+    as more than one person.
+    """
+    return {"Authorization": f"Bearer {issue_token(user_id, handle=handle_of(user_id))}"}
+
+
+def handle_of(user_id: uuid.UUID) -> str:
+    return f"@u{str(user_id)[:8]}"
 
 
 async def test_e3_h1_ca1_following_a_public_account_is_immediate(api):
@@ -248,3 +258,41 @@ async def test_the_window_does_not_move_forward_with_each_attempt(api):
     second_ttl = await app.state.redis.ttl(f"follow:rate:{follower}")
 
     assert second_ttl <= first_ttl
+
+
+async def test_the_handle_from_the_token_lands_on_the_profile(api):
+    follower, followee = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(followee)
+
+    await api.post(f"/users/{followee}/follow", headers=signed_in_as(follower))
+
+    async with app.state.session_factory() as session:
+        profile = await session.get(UserProfileModel, follower)
+        assert profile.handle == handle_of(follower)
+
+
+async def test_a_profile_without_a_handle_gets_it_on_the_next_request(api):
+    """The rows created before users-api sent the handle get filled in."""
+    follower, followee = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(followee)
+    async with app.state.session_factory() as session:
+        session.add(UserProfileModel(id=follower))
+        await session.commit()
+
+    await api.post(f"/users/{followee}/follow", headers=signed_in_as(follower))
+
+    async with app.state.session_factory() as session:
+        profile = await session.get(UserProfileModel, follower)
+        assert profile.handle == handle_of(follower)
+
+
+async def test_a_token_without_a_handle_leaves_the_profile_alone(api):
+    follower, followee = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(followee)
+
+    headers = {"Authorization": f"Bearer {issue_token(follower, handle=None)}"}
+    response = await api.post(f"/users/{followee}/follow", headers=headers)
+
+    assert response.status_code == 204
+    async with app.state.session_factory() as session:
+        assert (await session.get(UserProfileModel, follower)).handle is None

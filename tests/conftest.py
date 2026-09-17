@@ -29,13 +29,19 @@ os.environ["JWT_PUBLIC_KEY"] = (
 )
 
 
-def issue_token(subject: uuid.UUID | None = None, *, expires_in_minutes: int = 15) -> str:
+def issue_token(
+    subject: uuid.UUID | None = None,
+    *,
+    handle: str | None = "@alumno_01",
+    expires_in_minutes: int = 15,
+) -> str:
     """A token of the same shape users-api issues, signed with the test key."""
     now = datetime.now(UTC)
     return jwt.encode(
         {
             "sub": str(subject or uuid.uuid4()),
             "role": "user",
+            "handle": handle,
             "jti": str(uuid.uuid4()),
             "iat": now,
             "exp": now + timedelta(minutes=expires_in_minutes),
