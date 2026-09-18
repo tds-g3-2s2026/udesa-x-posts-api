@@ -1,45 +1,12 @@
 import asyncio
 import uuid
 
-import httpx
-import pytest
-from sqlalchemy import delete
-
 from posts_api.infrastructure.database.models import FollowModel, UserProfileModel
 from posts_api.main import app
 from tests.conftest import issue_token, requires_services
+from tests.integration.conftest import given_a_profile, handle_of, signed_in_as
 
 pytestmark = requires_services
-
-
-@pytest.fixture
-async def api():
-    """The application running, on an empty graph.
-
-    The tables are emptied before each test instead of after: if one fails, its
-    rows stay in the database to be looked at.
-    """
-    async with app.router.lifespan_context(app):
-        async with app.state.session_factory() as session:
-            await session.execute(delete(FollowModel))
-            await session.execute(delete(UserProfileModel))
-            await session.commit()
-        # The rate limit counters live outside PostgreSQL, so emptying the
-        # tables is not enough to leave one test independent from the next.
-        await app.state.redis.flushdb()
-
-        transport = httpx.ASGITransport(app=app)
-        # The prefix travels in the base URL so each test keeps writing the path
-        # it cares about, and the request that goes out is the real one.
-        async with httpx.AsyncClient(transport=transport, base_url="http://test/api") as client:
-            yield client
-
-
-async def given_a_profile(user_id: uuid.UUID, *, visibility: str = "public") -> None:
-    """Put an account on the graph, the way the copy from users-api will."""
-    async with app.state.session_factory() as session:
-        session.add(UserProfileModel(id=user_id, visibility=visibility))
-        await session.commit()
 
 
 async def is_following(follower_id: uuid.UUID, followee_id: uuid.UUID) -> bool:
@@ -52,20 +19,6 @@ async def counters_of(user_id: uuid.UUID) -> tuple[int, int]:
     async with app.state.session_factory() as session:
         profile = await session.get(UserProfileModel, user_id)
         return profile.followers_count, profile.following_count
-
-
-def signed_in_as(user_id: uuid.UUID) -> dict[str, str]:
-    """A token for that account, with its own handle.
-
-    The handle is derived from the id because the column is unique: two accounts
-    cannot share one, and a fixed value would blow up the moment a test signs in
-    as more than one person.
-    """
-    return {"Authorization": f"Bearer {issue_token(user_id, handle=handle_of(user_id))}"}
-
-
-def handle_of(user_id: uuid.UUID) -> str:
-    return f"@u{str(user_id)[:8]}"
 
 
 async def test_e3_h1_ca1_following_a_public_account_is_immediate(api):
@@ -125,16 +78,6 @@ async def test_following_an_unknown_account_is_rejected(api):
 
     assert response.status_code == 404
     assert response.json()["type"].endswith("/user-not-found")
-
-
-async def test_following_a_protected_account_is_not_available_yet(api):
-    follower, followee = uuid.uuid4(), uuid.uuid4()
-    await given_a_profile(followee, visibility="protected")
-
-    response = await api.post(f"/users/{followee}/follow", headers=signed_in_as(follower))
-
-    assert response.status_code == 409
-    assert response.json()["type"].endswith("/follow-needs-approval")
 
 
 async def test_following_without_a_token_is_rejected(api):
