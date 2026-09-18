@@ -6,7 +6,7 @@ here and a counter moved there land in the same transaction.
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.app.models.follow import (
@@ -53,6 +53,40 @@ class FollowRequestRepository:
         await self._session.flush()
         await self._session.refresh(row)
         return _to_request(row)
+
+    async def find_pending_by_id(
+        self, request_id: uuid.UUID, *, target_id: uuid.UUID
+    ) -> FollowRequest | None:
+        """An open request, but only if it was aimed at that account.
+
+        The owner is part of the query and not a check afterwards: a request
+        belonging to somebody else simply does not come back, so there is no
+        branch that could forget to compare.
+        """
+        found = await self._session.execute(
+            select(FollowRequestModel).where(
+                FollowRequestModel.id == request_id,
+                FollowRequestModel.target_id == target_id,
+                FollowRequestModel.status == FollowRequestStatus.PENDING,
+            )
+        )
+        row = found.scalar_one_or_none()
+        return _to_request(row) if row is not None else None
+
+    async def resolve(self, request_id: uuid.UUID, status: FollowRequestStatus) -> None:
+        """Move an open request to its answer.
+
+        The status is part of the condition, so a request already answered is
+        not answered twice: the update reaches no rows.
+        """
+        await self._session.execute(
+            update(FollowRequestModel)
+            .where(
+                FollowRequestModel.id == request_id,
+                FollowRequestModel.status == FollowRequestStatus.PENDING,
+            )
+            .values(status=status)
+        )
 
     async def pending_for(self, target_id: uuid.UUID) -> list[PendingFollowRequest]:
         """The requests aimed at an account, newest first.
