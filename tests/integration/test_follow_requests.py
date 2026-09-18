@@ -130,3 +130,147 @@ async def test_the_listing_needs_a_token(api):
     response = await api.get("/follow-requests")
 
     assert response.status_code == 401
+
+
+async def a_request_from(api, requester: uuid.UUID, target: uuid.UUID) -> str:
+    """Leave a pending request and give back its id, the way the screen gets it."""
+    await api.post(f"/users/{target}/follow", headers=signed_in_as(requester))
+    listed = await api.get("/follow-requests", headers=signed_in_as(target))
+    return listed.json()[0]["id"]
+
+
+async def counters_of(user_id: uuid.UUID) -> tuple[int, int]:
+    async with app.state.session_factory() as session:
+        profile = await session.get(UserProfileModel, user_id)
+        return profile.followers_count, profile.following_count
+
+
+async def status_of(request_id: str) -> str:
+    async with app.state.session_factory() as session:
+        return (await session.get(FollowRequestModel, uuid.UUID(request_id))).status
+
+
+async def test_approving_establishes_the_relationship_and_moves_the_counters(api):
+    requester, target = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(target, visibility="protected")
+    request_id = await a_request_from(api, requester, target)
+
+    response = await api.post(
+        f"/follow-requests/{request_id}/approve", headers=signed_in_as(target)
+    )
+
+    assert response.status_code == 204
+    assert await status_of(request_id) == "approved"
+    async with app.state.session_factory() as session:
+        assert await session.get(FollowModel, (requester, target)) is not None
+    assert await counters_of(target) == (1, 0)
+    assert await counters_of(requester) == (0, 1)
+
+
+async def test_rejecting_closes_the_request_and_changes_nothing_else(api):
+    requester, target = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(target, visibility="protected")
+    request_id = await a_request_from(api, requester, target)
+
+    response = await api.post(f"/follow-requests/{request_id}/reject", headers=signed_in_as(target))
+
+    assert response.status_code == 204
+    assert await status_of(request_id) == "rejected"
+    async with app.state.session_factory() as session:
+        assert await session.get(FollowModel, (requester, target)) is None
+    assert await counters_of(target) == (0, 0)
+
+
+async def test_somebody_else_cannot_answer_a_request(api):
+    """404 and not 403: a 403 would confirm that the request exists."""
+    requester, target, stranger = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(target, visibility="protected")
+    await given_a_profile(stranger)
+    request_id = await a_request_from(api, requester, target)
+
+    response = await api.post(
+        f"/follow-requests/{request_id}/approve", headers=signed_in_as(stranger)
+    )
+
+    assert response.status_code == 404
+    assert await status_of(request_id) == "pending"
+
+
+async def test_neither_can_the_one_who_asked(api):
+    requester, target = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(target, visibility="protected")
+    request_id = await a_request_from(api, requester, target)
+
+    response = await api.post(
+        f"/follow-requests/{request_id}/approve", headers=signed_in_as(requester)
+    )
+
+    assert response.status_code == 404
+    assert await status_of(request_id) == "pending"
+
+
+async def test_approving_twice_does_not_count_two_followers(api):
+    requester, target = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(target, visibility="protected")
+    request_id = await a_request_from(api, requester, target)
+    await api.post(f"/follow-requests/{request_id}/approve", headers=signed_in_as(target))
+
+    again = await api.post(f"/follow-requests/{request_id}/approve", headers=signed_in_as(target))
+
+    assert again.status_code == 404
+    assert await counters_of(target) == (1, 0)
+
+
+async def test_a_rejected_request_cannot_be_approved_afterwards(api):
+    requester, target = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(target, visibility="protected")
+    request_id = await a_request_from(api, requester, target)
+    await api.post(f"/follow-requests/{request_id}/reject", headers=signed_in_as(target))
+
+    response = await api.post(
+        f"/follow-requests/{request_id}/approve", headers=signed_in_as(target)
+    )
+
+    assert response.status_code == 404
+    assert await status_of(request_id) == "rejected"
+
+
+async def test_an_answered_request_leaves_the_pending_list(api):
+    requester, target = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(target, visibility="protected")
+    request_id = await a_request_from(api, requester, target)
+
+    await api.post(f"/follow-requests/{request_id}/approve", headers=signed_in_as(target))
+
+    listed = await api.get("/follow-requests", headers=signed_in_as(target))
+    assert listed.json() == []
+
+
+async def test_asking_again_after_unfollowing_can_be_approved_again(api):
+    """A plain unique constraint over the three columns would break here.
+
+    The second approval would collide with the first resolved row, so the
+    uniqueness only applies while a request is open.
+    """
+    requester, target = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(target, visibility="protected")
+    first = await a_request_from(api, requester, target)
+    await api.post(f"/follow-requests/{first}/approve", headers=signed_in_as(target))
+    await api.delete(f"/users/{target}/follow", headers=signed_in_as(requester))
+
+    second = await a_request_from(api, requester, target)
+    response = await api.post(f"/follow-requests/{second}/approve", headers=signed_in_as(target))
+
+    assert response.status_code == 204
+    assert await counters_of(target) == (1, 0)
+
+
+async def test_answering_a_request_that_does_not_exist_is_a_404(api):
+    owner = uuid.uuid4()
+    await given_a_profile(owner, visibility="protected")
+
+    response = await api.post(
+        f"/follow-requests/{uuid.uuid4()}/reject", headers=signed_in_as(owner)
+    )
+
+    assert response.status_code == 404
