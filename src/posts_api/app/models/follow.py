@@ -69,6 +69,20 @@ class Follow:
     created_at: datetime | None = None
 
 
+@dataclass(frozen=True)
+class PendingFollowRequest:
+    """A request waiting for its answer, shaped the way the screen reads it.
+
+    Not the same as `FollowRequest`: that one is the row, and this one is the
+    row plus the handle of whoever asked, which lives on their profile. The
+    screen needs a name, and resolving it per row would be one query each.
+    """
+
+    id: uuid.UUID
+    requester_handle: str | None
+    created_at: datetime
+
+
 @dataclass
 class FollowRequest:
     """A pending ask to follow a protected account."""
