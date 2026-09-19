@@ -274,3 +274,30 @@ async def test_answering_a_request_that_does_not_exist_is_a_404(api):
     )
 
     assert response.status_code == 404
+
+
+async def test_reading_the_list_puts_the_caller_on_the_graph(api):
+    """Without this nobody could ever be followed for the first time.
+
+    A profile is only written by a request that succeeds: a failed one rolls
+    its transaction back, and following somebody who is not on the graph fails.
+    """
+    newcomer = uuid.uuid4()
+
+    await api.get("/follow-requests", headers=signed_in_as(newcomer))
+
+    async with app.state.session_factory() as session:
+        profile = await session.get(UserProfileModel, newcomer)
+        assert profile is not None
+        assert profile.handle == handle_of(newcomer)
+
+
+async def test_an_account_that_opened_the_app_can_be_followed(api):
+    """The whole bootstrap, without seeding anything by hand."""
+    follower, target = uuid.uuid4(), uuid.uuid4()
+    # Neither exists on the graph. The target opens their requests screen.
+    await api.get("/follow-requests", headers=signed_in_as(target))
+
+    response = await api.post(f"/users/{target}/follow", headers=signed_in_as(follower))
+
+    assert response.status_code == 204
