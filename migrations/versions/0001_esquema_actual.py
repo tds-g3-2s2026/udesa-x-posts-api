@@ -65,6 +65,16 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("follower_id", "followee_id"),
         sa.CheckConstraint("follower_id <> followee_id", name="ck_follows_not_self"),
     )
+    op.create_index(
+        "ix_follows_followee_cursor",
+        "follows",
+        ["followee_id", "created_at", "follower_id"],
+    )
+    op.create_index(
+        "ix_follows_follower_cursor",
+        "follows",
+        ["follower_id", "created_at", "followee_id"],
+    )
 
     op.create_table(
         "follow_requests",
@@ -104,13 +114,22 @@ def upgrade() -> None:
         unique=True,
         postgresql_where=sa.text("status = 'pending'"),
     )
+    op.create_index(
+        "ix_follow_requests_target_pending_cursor",
+        "follow_requests",
+        ["target_id", "created_at", "id"],
+        postgresql_where=sa.text("status = 'pending'"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("ix_follow_requests_target_pending_cursor", table_name="follow_requests")
     op.drop_index("uq_follow_requests_open_pair", table_name="follow_requests")
     op.drop_index(op.f("ix_follow_requests_target_id"), table_name="follow_requests")
     op.drop_index(op.f("ix_follow_requests_requester_id"), table_name="follow_requests")
     op.drop_table("follow_requests")
+    op.drop_index("ix_follows_follower_cursor", table_name="follows")
+    op.drop_index("ix_follows_followee_cursor", table_name="follows")
     op.drop_table("follows")
     op.drop_index(op.f("ix_user_profiles_handle"), table_name="user_profiles")
     op.drop_table("user_profiles")
