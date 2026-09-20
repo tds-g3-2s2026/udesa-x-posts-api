@@ -73,6 +73,22 @@ class Follow:
 
 
 @dataclass(frozen=True)
+class FollowListItem:
+    """One row of the followers or following screens.
+
+    Not the same as `Follow`: that is the relationship itself, and this is the
+    relationship plus the handle of the other account and whether the caller
+    already follows it, which is what the screen needs to paint the row and
+    its button without a second call per line.
+    """
+
+    id: uuid.UUID
+    handle: str | None
+    followed_by_viewer: bool
+    created_at: datetime
+
+
+@dataclass(frozen=True)
 class PendingFollowRequest:
     """A request waiting for its answer, shaped the way the screen reads it.
 

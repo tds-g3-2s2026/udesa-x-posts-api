@@ -61,6 +61,11 @@ class FollowModel(Base):
         # The pair is the identity of the row, so following twice cannot create
         # a second one; nobody follows themselves.
         CheckConstraint("follower_id <> followee_id", name="ck_follows_not_self"),
+        # One for each direction the followers and following screens read in:
+        # the fixed side of the query plus the cursor's order column and
+        # tiebreak, in that order, so the query matches the index exactly.
+        Index("ix_follows_followee_cursor", "followee_id", "created_at", "follower_id"),
+        Index("ix_follows_follower_cursor", "follower_id", "created_at", "followee_id"),
     )
 
     follower_id: Mapped[uuid.UUID] = mapped_column(
