@@ -23,6 +23,23 @@ class FollowRequestStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+    # Withdrawn by whoever asked, which is not the same as refused by the
+    # account they asked: `rejected` is the owner's answer and this one is not.
+    CANCELLED = "cancelled"
+
+
+@dataclass(frozen=True)
+class Account:
+    """Who is behind a request, as the token describes them.
+
+    Not the same as `UserProfile`: that one is what this service stores about a
+    user, and this one is what arrives signed on every call. The handle can be
+    missing, because a token issued before users-api started sending it is still
+    valid until it expires.
+    """
+
+    id: uuid.UUID
+    handle: str | None = None
 
 
 @dataclass
@@ -53,6 +70,20 @@ class Follow:
     follower_id: uuid.UUID
     followee_id: uuid.UUID
     created_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class PendingFollowRequest:
+    """A request waiting for its answer, shaped the way the screen reads it.
+
+    Not the same as `FollowRequest`: that one is the row, and this one is the
+    row plus the handle of whoever asked, which lives on their profile. The
+    screen needs a name, and resolving it per row would be one query each.
+    """
+
+    id: uuid.UUID
+    requester_handle: str | None
+    created_at: datetime
 
 
 @dataclass

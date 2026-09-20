@@ -19,6 +19,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.app.errors import ProblemError
+from posts_api.app.models.follow import Account
 from posts_api.app.security import decode_access_token
 from posts_api.infrastructure.database.session import session_scope
 
@@ -44,7 +45,7 @@ bearer_scheme = HTTPBearer()
 BearerDep = Annotated[HTTPAuthorizationCredentials, Depends(bearer_scheme)]
 
 
-def get_current_user_id(request: Request, credentials: BearerDep) -> uuid.UUID:
+def get_current_user(request: Request, credentials: BearerDep) -> Account:
     """The account behind the bearer token.
 
     Signature, expiry and issuer are checked locally. Revocation is recorded in
@@ -66,7 +67,10 @@ def get_current_user_id(request: Request, credentials: BearerDep) -> uuid.UUID:
             detail="El token no es válido",
         ) from exc
 
-    return uuid.UUID(claims["sub"])
+    # The handle is read with `get` and not indexed: a token minted before
+    # users-api started sending it stays valid until it expires, and rejecting
+    # it would log everyone out on deploy.
+    return Account(id=uuid.UUID(claims["sub"]), handle=claims.get("handle"))
 
 
-CurrentUserDep = Annotated[uuid.UUID, Depends(get_current_user_id)]
+CurrentUserDep = Annotated[Account, Depends(get_current_user)]

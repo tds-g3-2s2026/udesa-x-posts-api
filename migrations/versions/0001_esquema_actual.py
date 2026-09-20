@@ -87,10 +87,8 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["target_id"], ["user_profiles.id"]),
         sa.PrimaryKeyConstraint("id"),
         sa.CheckConstraint(
-            "status IN ('pending', 'approved', 'rejected')", name="ck_follow_requests_status"
-        ),
-        sa.UniqueConstraint(
-            "requester_id", "target_id", "status", name="uq_follow_requests_open_pair"
+            "status IN ('pending', 'approved', 'rejected', 'cancelled')",
+            name="ck_follow_requests_status",
         ),
     )
     op.create_index(
@@ -99,9 +97,17 @@ def upgrade() -> None:
     op.create_index(
         op.f("ix_follow_requests_target_id"), "follow_requests", ["target_id"], unique=False
     )
+    op.create_index(
+        "uq_follow_requests_open_pair",
+        "follow_requests",
+        ["requester_id", "target_id"],
+        unique=True,
+        postgresql_where=sa.text("status = 'pending'"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("uq_follow_requests_open_pair", table_name="follow_requests")
     op.drop_index(op.f("ix_follow_requests_target_id"), table_name="follow_requests")
     op.drop_index(op.f("ix_follow_requests_requester_id"), table_name="follow_requests")
     op.drop_table("follow_requests")

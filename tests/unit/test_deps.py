@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.security import HTTPAuthorizationCredentials
 
-from posts_api.api.deps import get_current_user_id
+from posts_api.api.deps import get_current_user
 from posts_api.app.errors import ProblemError
 from posts_api.app.security import load_public_key
 from tests.conftest import issue_token
@@ -26,9 +26,20 @@ def bearer(token: str) -> HTTPAuthorizationCredentials:
 def test_a_valid_token_yields_the_account_that_signed_in():
     subject = uuid.uuid4()
 
-    resolved = get_current_user_id(fake_request(), bearer(issue_token(subject)))
+    resolved = get_current_user(fake_request(), bearer(issue_token(subject, handle="@pepita")))
 
-    assert resolved == subject
+    assert resolved.id == subject
+    assert resolved.handle == "@pepita"
+
+
+def test_a_token_without_a_handle_still_authenticates():
+    """Tokens minted before users-api started sending it stay valid."""
+    subject = uuid.uuid4()
+
+    resolved = get_current_user(fake_request(), bearer(issue_token(subject, handle=None)))
+
+    assert resolved.id == subject
+    assert resolved.handle is None
 
 
 def test_a_tampered_token_is_answered_with_401():
@@ -36,7 +47,7 @@ def test_a_tampered_token_is_answered_with_401():
     tampered = token[:-4] + "AAAA"
 
     with pytest.raises(ProblemError) as error:
-        get_current_user_id(fake_request(), bearer(tampered))
+        get_current_user(fake_request(), bearer(tampered))
 
     assert error.value.status == 401
     assert error.value.code == "invalid-token"
@@ -46,13 +57,13 @@ def test_an_expired_token_is_answered_with_401():
     expired = issue_token(expires_in_minutes=-1)
 
     with pytest.raises(ProblemError) as error:
-        get_current_user_id(fake_request(), bearer(expired))
+        get_current_user(fake_request(), bearer(expired))
 
     assert error.value.status == 401
 
 
 def test_something_that_is_not_a_token_is_answered_with_401():
     with pytest.raises(ProblemError) as error:
-        get_current_user_id(fake_request(), bearer("no-soy-un-token"))
+        get_current_user(fake_request(), bearer("no-soy-un-token"))
 
     assert error.value.status == 401

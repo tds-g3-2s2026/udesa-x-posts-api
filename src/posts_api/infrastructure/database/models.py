@@ -15,10 +15,11 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
-    UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
@@ -75,11 +76,19 @@ class FollowRequestModel(Base):
     __tablename__ = "follow_requests"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending', 'approved', 'rejected')", name="ck_follow_requests_status"
+            "status IN ('pending', 'approved', 'rejected', 'cancelled')",
+            name="ck_follow_requests_status",
         ),
-        # Only one open request per pair. Resolved ones stay as history.
-        UniqueConstraint(
-            "requester_id", "target_id", "status", name="uq_follow_requests_open_pair"
+        # Only one open request per pair, and only while it is open: a plain
+        # unique constraint over the three columns would also forbid a second
+        # approved row, so asking again after unfollowing would fail the moment
+        # it is approved. Resolved ones stay as history and may repeat.
+        Index(
+            "uq_follow_requests_open_pair",
+            "requester_id",
+            "target_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
         ),
     )
 

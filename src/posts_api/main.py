@@ -7,6 +7,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from posts_api.api.errors import problem_error_handler, validation_error_handler
+from posts_api.api.follow_requests import router as follow_requests_router
 from posts_api.api.follows import router as follows_router
 from posts_api.api.health import router as health_router
 from posts_api.app.errors import ProblemError
@@ -46,5 +47,8 @@ app = FastAPI(title="UdeSA-X Posts API", version="0.1.0", lifespan=lifespan)
 app.add_exception_handler(ProblemError, problem_error_handler)
 app.add_exception_handler(RequestValidationError, validation_error_handler)
 
+# The healthcheck stays out of the prefix: the Kubernetes probes reach the pod
+# directly and never pass through the Ingress.
 app.include_router(health_router)
 app.include_router(follows_router, prefix=API_PREFIX)
+app.include_router(follow_requests_router, prefix=API_PREFIX)

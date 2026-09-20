@@ -8,6 +8,8 @@ rules can be read, tested and defended without starting the application.
 import uuid
 
 from posts_api.app.errors import ProblemError
+from posts_api.app.models.follow import Account, FollowRequest
+from posts_api.app.repositories.follow_requests import FollowRequestRepository
 from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.rate_limiter import RateLimiter
 
@@ -19,23 +21,31 @@ class FollowService:
     def __init__(
         self,
         repository: FollowRepository,
+        requests: FollowRequestRepository,
         rate_limiter: RateLimiter,
         *,
         follow_limit: int,
         window_seconds: int,
     ) -> None:
         self._repository = repository
+        self._requests = requests
         self._rate_limiter = rate_limiter
         self._follow_limit = follow_limit
         self._window_seconds = window_seconds
 
-    async def follow(self, follower_id: uuid.UUID, followee_id: uuid.UUID) -> None:
-        """Establish the relationship, or leave it as it already was.
+    async def follow(self, follower: Account, followee_id: uuid.UUID) -> FollowRequest | None:
+        """Follow the account, or ask for permission if it is protected.
+
+        Returns the request when the account is protected, and nothing when the
+        relationship was established. That is what tells the endpoint whether to
+        answer `202`, which means it was asked for, or `204`, which means it is
+        done.
 
         Following twice is not an error: the second call finds the relationship
         and returns. The client retrying a request it never saw answered gets
         the same result as the first time.
         """
+        follower_id = follower.id
         if follower_id == followee_id:
             raise ProblemError(
                 status=409,
@@ -46,7 +56,7 @@ class FollowService:
 
         await self._charge_the_rate_limit(follower_id)
 
-        await self._repository.ensure_profile(follower_id)
+        await self._repository.ensure_profile(follower)
         target = await self._repository.find_profile(followee_id)
         if target is None:
             raise ProblemError(
@@ -56,30 +66,44 @@ class FollowService:
                 detail="La cuenta que querés seguir no existe",
             )
 
-        if target.needs_approval:
-            # A protected account turns the follow into a request that its
-            # owner approves. That circuit is the next piece of E3-H1, and
-            # until it lands the endpoint says so instead of following anyway.
-            raise ProblemError(
-                status=409,
-                code="follow-needs-approval",
-                title="No se pudo seguir la cuenta",
-                detail="La cuenta es protegida y todavía no se pueden enviar solicitudes",
-            )
-
+        # Checked before the visibility: an account that is already followed and
+        # turned protected afterwards should not receive a request for a
+        # relationship that already exists.
         if await self._repository.is_following(follower_id, followee_id):
-            return
+            return None
+
+        if target.needs_approval:
+            # A protected account turns the follow into a request its owner
+            # answers. Asking twice reuses the open one, so a retry cannot leave
+            # two rows waiting for the same answer.
+            open_already = await self._requests.find_pending(follower_id, followee_id)
+            if open_already is not None:
+                return open_already
+            return await self._requests.open(follower_id, followee_id)
 
         # Both in the same session, so the same transaction carries the
         # relationship and the counters: either the two land or neither does.
         await self._repository.add_follow(follower_id, followee_id)
         await self._repository.move_counters(follower_id, followee_id, by=1)
+        return None
 
-    async def unfollow(self, follower_id: uuid.UUID, followee_id: uuid.UUID) -> None:
-        """Undo the relationship. Not following the account is already the result."""
+    async def unfollow(self, follower: Account, followee_id: uuid.UUID) -> None:
+        """Undo the relationship, or withdraw the ask that never got an answer.
+
+        Both are the same intention from the outside: whoever presses the
+        button wants to stop following that account, and whether what exists is
+        a relationship or a request waiting is not something they can see.
+        """
+        follower_id = follower.id
         removed = await self._repository.remove_follow(follower_id, followee_id)
         if removed:
             await self._repository.move_counters(follower_id, followee_id, by=-1)
+            return
+
+        # There was no relationship, so what is being undone may be a request
+        # nobody answered yet. Counters do not move: a pending request never
+        # moved them in the first place.
+        await self._requests.cancel(follower_id, followee_id)
 
     async def _charge_the_rate_limit(self, follower_id: uuid.UUID) -> None:
         """Count the attempt, and refuse it if the window is already full.
