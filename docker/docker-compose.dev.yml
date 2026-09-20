@@ -17,6 +17,9 @@ services:
         -----BEGIN PUBLIC KEY-----
         MCowBQYDK2VwAyEARApo9EwI+QfBFaEGEuai1VDicsNo3gpNXJ+qzVkfaeU=
         -----END PUBLIC KEY-----
+    command: >-
+      sh -c "alembic upgrade head &&
+             uvicorn posts_api.main:app --host 0.0.0.0 --port 8000 --workers 1"
     depends_on:
       postgres:
         condition: service_healthy
