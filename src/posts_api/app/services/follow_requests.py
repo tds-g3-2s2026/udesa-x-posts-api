@@ -18,7 +18,15 @@ class FollowRequestService:
 
         The owner comes from the token and not from the URL, so there is no
         identifier a caller could change to read somebody else's list.
+
+        Reading the list also puts the caller on the graph. It is not a detail:
+        a profile is only created by a request that succeeds, because a failed
+        one rolls its transaction back, and the only other place that creates
+        one is following somebody. An account nobody has on the graph answers
+        `404` when somebody tries to follow it, so without this nobody could
+        ever be followed for the first time.
         """
+        await self._follows.ensure_profile(owner)
         return await self._requests.pending_for(owner.id)
 
     async def approve(self, owner: Account, request_id: uuid.UUID) -> None:
