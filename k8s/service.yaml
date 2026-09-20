@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: posts-api
+  namespace: tds-group-3
+spec:
+  type: ClusterIP
+  selector:
+    app: posts-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP

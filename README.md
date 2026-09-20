@@ -44,6 +44,47 @@ mergear. Los dos checks son obligatorios en `main`.
 Además del test, el pipeline construye la imagen de producción y verifica que levante y
 responda 200 en `/healthcheck`: que compile no prueba que sirva.
 
+## Kubernetes
+
+Los cuatro manifiestos de `k8s/` usan el namespace `tds-group-3`, según
+[ADR-008](https://github.com/tds-g3-2s2026/udesa-x-platform/blob/main/docs/adr/ADR-008-plataforma-de-despliegue.md).
+El Service es interno (`ClusterIP`) y escucha en `8000`, igual que su `targetPort`,
+el `containerPort`, el `EXPOSE` y el comando de Uvicorn en `docker/Dockerfile`.
+Las dos sondas consultan `/healthcheck`, que comprueba PostgreSQL y Redis.
+
+Una réplica pide `100m` de CPU y `128Mi` de memoria, con límites `500m` y `512Mi`,
+dentro del LimitRange de plataforma. El rollout usa `maxSurge: 0` y
+`maxUnavailable: 1` para no pedir otro pod a la cuota compartida; con una réplica,
+esto implica una interrupción durante las actualizaciones.
+
+El Deployment contiene el marcador `${ECR_IMAGE}`, autorizado hasta disponer de
+la URI asignada por la cátedra. Kubernetes no lo sustituye: el futuro pipeline
+debe reemplazarlo por la URI completa de ECR con tag por SHA o digest **antes**
+de aplicar. El prefijo sale del secret `ECR_URI_PREFIX` definido en plataforma;
+no se inventa el Account ID ni el nombre del repositorio.
+
+`configmap.yaml` define `LOG_LEVEL`, `FOLLOW_RATE_LIMIT` y
+`FOLLOW_RATE_WINDOW_SECONDS`. Copiar `secret.template.yaml` a `secret.yaml`,
+ignorado por git, y completar `DATABASE_URL` (con esquema `postgresql+asyncpg://`),
+`REDIS_URL` y `JWT_PUBLIC_KEY` (clave pública Ed25519 en PEM). En CI, los valores
+provienen de GitHub Secrets. No aplicar la plantilla vacía ni usar
+`kubectl apply -f k8s/` en un despliegue: incluiría esa plantilla.
+
+Validación sin escribir recursos:
+
+```bash
+kubectl apply --dry-run=client \
+  -f k8s/deployment.yaml \
+  -f k8s/service.yaml \
+  -f k8s/configmap.yaml \
+  -f k8s/secret.template.yaml
+```
+
+El dry-run no necesita permisos de escritura, pero `kubectl` consulta discovery
+y esquemas del API server: requiere un kubeconfig y acceso de lectura al cluster.
+No comprueba la existencia de la imagen, los valores secretos ni la cuota libre.
+El PR requiere aprobación del tutor.
+
 ## Estructura
 
 Por capas, según el `ADR-007` de `udesa-x-platform`:
