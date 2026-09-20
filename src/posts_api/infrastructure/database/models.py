@@ -76,7 +76,8 @@ class FollowRequestModel(Base):
     __tablename__ = "follow_requests"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending', 'approved', 'rejected')", name="ck_follow_requests_status"
+            "status IN ('pending', 'approved', 'rejected', 'cancelled')",
+            name="ck_follow_requests_status",
         ),
         # Only one open request per pair, and only while it is open: a plain
         # unique constraint over the three columns would also forbid a second

@@ -23,6 +23,9 @@ class FollowRequestStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+    # Withdrawn by whoever asked, which is not the same as refused by the
+    # account they asked: `rejected` is the owner's answer and this one is not.
+    CANCELLED = "cancelled"
 
 
 @dataclass(frozen=True)
