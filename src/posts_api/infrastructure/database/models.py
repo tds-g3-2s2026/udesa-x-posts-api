@@ -90,6 +90,16 @@ class FollowRequestModel(Base):
             unique=True,
             postgresql_where=text("status = 'pending'"),
         ),
+        # Matches the pending listing's query exactly, target plus the
+        # cursor's order column and tiebreak. Partial, like the index above,
+        # because the listing never reads anything but the pending rows.
+        Index(
+            "ix_follow_requests_target_pending_cursor",
+            "target_id",
+            "created_at",
+            "id",
+            postgresql_where=text("status = 'pending'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

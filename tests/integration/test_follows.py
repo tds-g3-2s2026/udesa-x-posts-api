@@ -318,7 +318,7 @@ async def test_a_withdrawn_request_leaves_the_owners_pending_list(api):
     await api.delete(f"/users/{target}/follow", headers=signed_in_as(requester))
 
     listed = await api.get("/follow-requests", headers=signed_in_as(target))
-    assert listed.json() == []
+    assert listed.json()["items"] == []
 
 
 async def test_asking_again_after_withdrawing_opens_a_new_request(api):
@@ -332,7 +332,7 @@ async def test_asking_again_after_withdrawing_opens_a_new_request(api):
 
     assert again.status_code == 202
     listed = await api.get("/follow-requests", headers=signed_in_as(target))
-    assert len(listed.json()) == 1
+    assert len(listed.json()["items"]) == 1
 
 
 async def test_a_request_the_owner_already_answered_is_not_rewritten(api):
@@ -341,7 +341,7 @@ async def test_a_request_the_owner_already_answered_is_not_rewritten(api):
     await given_a_profile(target, visibility="protected")
     await api.post(f"/users/{target}/follow", headers=signed_in_as(requester))
     listed = await api.get("/follow-requests", headers=signed_in_as(target))
-    request_id = listed.json()[0]["id"]
+    request_id = listed.json()["items"][0]["id"]
     await api.post(f"/follow-requests/{request_id}/reject", headers=signed_in_as(target))
 
     await api.delete(f"/users/{target}/follow", headers=signed_in_as(requester))

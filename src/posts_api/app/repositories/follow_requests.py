@@ -14,6 +14,7 @@ from posts_api.app.models.follow import (
     FollowRequestStatus,
     PendingFollowRequest,
 )
+from posts_api.app.pagination import DEFAULT_PAGE_SIZE, Cursor, apply_cursor, page_of
 from posts_api.infrastructure.database.models import FollowRequestModel, UserProfileModel
 
 
@@ -106,23 +107,39 @@ class FollowRequestRepository:
         )
         return result.rowcount > 0
 
-    async def pending_for(self, target_id: uuid.UUID) -> list[PendingFollowRequest]:
-        """The requests aimed at an account, newest first.
+    async def pending_for(
+        self,
+        target_id: uuid.UUID,
+        *,
+        cursor: Cursor | None = None,
+        limit: int = DEFAULT_PAGE_SIZE,
+    ) -> tuple[list[PendingFollowRequest], str | None]:
+        """The requests aimed at an account, newest first, one page at a time.
 
         The handle is read in the same query, joined against the requester's
         profile: asking for it row by row would be one round trip per line of
         the screen.
         """
-        found = await self._session.execute(
+        base = (
             select(FollowRequestModel, UserProfileModel.handle)
             .join(UserProfileModel, UserProfileModel.id == FollowRequestModel.requester_id)
             .where(
                 FollowRequestModel.target_id == target_id,
                 FollowRequestModel.status == FollowRequestStatus.PENDING,
             )
-            .order_by(FollowRequestModel.created_at.desc())
         )
-        return [
+        statement = apply_cursor(
+            base,
+            order_by=FollowRequestModel.created_at,
+            tiebreak_by=FollowRequestModel.id,
+            cursor=cursor,
+            limit=limit,
+        )
+        found = await self._session.execute(statement)
+        rows = [
             PendingFollowRequest(id=row.id, requester_handle=handle, created_at=row.created_at)
             for row, handle in found.all()
         ]
+        return page_of(
+            rows, limit=limit, at=lambda one: one.created_at, tiebreak=lambda one: one.id
+        )
