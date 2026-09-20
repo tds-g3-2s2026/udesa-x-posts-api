@@ -1,10 +1,11 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from posts_api.api.deps import CurrentUserDep, SessionDep
 from posts_api.api.schemas.follow_requests import FollowRequestSummary
+from posts_api.api.schemas.pagination import CursorPage
 from posts_api.app.repositories.follow_requests import FollowRequestRepository
 from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.services.follow_requests import FollowRequestService
@@ -23,11 +24,14 @@ ServiceDep = Annotated[FollowRequestService, Depends(get_follow_request_service)
 
 @router.get("")
 async def list_pending(
-    current_user: CurrentUserDep, service: ServiceDep
-) -> list[FollowRequestSummary]:
+    current_user: CurrentUserDep,
+    service: ServiceDep,
+    cursor: Annotated[str | None, Query()] = None,
+) -> CursorPage[FollowRequestSummary]:
     """The requests aimed at whoever is asking. There is no way to ask for another account's."""
-    pending = await service.pending_for(current_user)
-    return [FollowRequestSummary.of(one) for one in pending]
+    pending, next_cursor = await service.pending_for(current_user, cursor=cursor)
+    items = [FollowRequestSummary.of(one) for one in pending]
+    return CursorPage(items=items, next_cursor=next_cursor)
 
 
 @router.post("/{request_id}/approve", status_code=status.HTTP_204_NO_CONTENT)

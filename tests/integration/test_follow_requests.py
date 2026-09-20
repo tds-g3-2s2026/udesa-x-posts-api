@@ -1,7 +1,9 @@
 import uuid
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
+from posts_api.app.pagination import DEFAULT_PAGE_SIZE
 from posts_api.infrastructure.database.models import (
     FollowModel,
     FollowRequestModel,
@@ -20,6 +22,26 @@ async def pending_rows(target_id: uuid.UUID) -> list[FollowRequestModel]:
             select(FollowRequestModel).where(FollowRequestModel.target_id == target_id)
         )
         return list(found.scalars())
+
+
+async def insert_pending(
+    requester_id: uuid.UUID, target_id: uuid.UUID, created_at: datetime
+) -> None:
+    """A pending request with a `created_at` set by hand.
+
+    Going through the API would leave every row timestamped by the database
+    clock at whatever instant the test happens to run, with no control over
+    which one sorts first. The ordering is exactly what these tests are about,
+    so it has to be an explicit input instead of an accident of timing.
+    """
+    await given_a_profile(requester_id)
+    async with app.state.session_factory() as session:
+        session.add(
+            FollowRequestModel(
+                requester_id=requester_id, target_id=target_id, created_at=created_at
+            )
+        )
+        await session.commit()
 
 
 async def test_e3_h1_ca2_following_a_protected_account_creates_a_pending_request(api):
@@ -47,11 +69,13 @@ async def test_the_listing_gives_the_screen_exactly_what_it_expects(api):
 
     assert response.status_code == 200
     body = response.json()
-    assert len(body) == 1
+    assert set(body) == {"items", "nextCursor"}
+    assert len(body["items"]) == 1
     # The names are the ones the app was written against, not the Python ones.
-    assert set(body[0]) == {"id", "requesterHandle", "createdAt"}
-    assert body[0]["requesterHandle"] == handle_of(requester)
-    assert uuid.UUID(body[0]["id"])
+    assert set(body["items"][0]) == {"id", "requesterHandle", "createdAt"}
+    assert body["items"][0]["requesterHandle"] == handle_of(requester)
+    assert uuid.UUID(body["items"][0]["id"])
+    assert body["nextCursor"] is None
 
 
 async def test_the_listing_only_returns_what_was_aimed_at_whoever_asks(api):
@@ -63,7 +87,7 @@ async def test_the_listing_only_returns_what_was_aimed_at_whoever_asks(api):
 
     response = await api.get("/follow-requests", headers=signed_in_as(mine))
 
-    assert [one["requesterHandle"] for one in response.json()] == [handle_of(requester)]
+    assert [one["requesterHandle"] for one in response.json()["items"]] == [handle_of(requester)]
     assert len(await pending_rows(somebody_else)) == 1
 
 
@@ -74,7 +98,7 @@ async def test_an_account_with_nothing_pending_gets_an_empty_list(api):
     response = await api.get("/follow-requests", headers=signed_in_as(owner))
 
     assert response.status_code == 200
-    assert response.json() == []
+    assert response.json() == {"items": [], "nextCursor": None}
 
 
 async def test_asking_twice_leaves_a_single_request(api):
@@ -132,11 +156,28 @@ async def test_the_listing_needs_a_token(api):
     assert response.status_code == 401
 
 
+async def test_a_garbled_cursor_is_a_400_and_not_a_500(api):
+    """A stale cursor from a previous deploy, or a tampered query string.
+
+    Either way, this is input the client sent, not a bug in the server: it
+    gets a Problem Details response, not an unhandled crash.
+    """
+    owner = uuid.uuid4()
+    await given_a_profile(owner, visibility="protected")
+
+    response = await api.get(
+        "/follow-requests?cursor=not-a-real-cursor", headers=signed_in_as(owner)
+    )
+
+    assert response.status_code == 400
+    assert response.json()["type"].endswith("/invalid-cursor")
+
+
 async def a_request_from(api, requester: uuid.UUID, target: uuid.UUID) -> str:
     """Leave a pending request and give back its id, the way the screen gets it."""
     await api.post(f"/users/{target}/follow", headers=signed_in_as(requester))
     listed = await api.get("/follow-requests", headers=signed_in_as(target))
-    return listed.json()[0]["id"]
+    return listed.json()["items"][0]["id"]
 
 
 async def counters_of(user_id: uuid.UUID) -> tuple[int, int]:
@@ -243,7 +284,7 @@ async def test_an_answered_request_leaves_the_pending_list(api):
     await api.post(f"/follow-requests/{request_id}/approve", headers=signed_in_as(target))
 
     listed = await api.get("/follow-requests", headers=signed_in_as(target))
-    assert listed.json() == []
+    assert listed.json()["items"] == []
 
 
 async def test_asking_again_after_unfollowing_can_be_approved_again(api):
@@ -301,3 +342,83 @@ async def test_an_account_that_opened_the_app_can_be_followed(api):
     response = await api.post(f"/users/{target}/follow", headers=signed_in_as(follower))
 
     assert response.status_code == 204
+
+
+async def test_a_full_page_carries_a_cursor_to_the_next_one(api):
+    target = uuid.uuid4()
+    await given_a_profile(target, visibility="protected")
+    base = datetime.now(UTC)
+    for offset in range(DEFAULT_PAGE_SIZE):
+        await insert_pending(uuid.uuid4(), target, base + timedelta(seconds=offset))
+
+    response = await api.get("/follow-requests", headers=signed_in_as(target))
+
+    body = response.json()
+    assert len(body["items"]) == DEFAULT_PAGE_SIZE
+    assert body["nextCursor"] is None  # exactly one page's worth, nothing left after it
+
+
+async def test_inserting_a_row_mid_pagination_does_not_repeat_or_skip_items(api):
+    """The test that tells a cursor apart from `OFFSET`.
+
+    Fill one page plus one row, read the first page, then let a new request
+    arrive before the caller asks for the second page. With `OFFSET`, the new
+    row would push everything one position to the right and the last item of
+    the first page would come back again at the top of the second. The cursor
+    does not count positions, so it is unaffected: the second page picks up
+    exactly where the first one stopped.
+    """
+    target = uuid.uuid4()
+    await given_a_profile(target, visibility="protected")
+    base = datetime.now(UTC)
+    requesters = [uuid.uuid4() for _ in range(DEFAULT_PAGE_SIZE + 1)]
+    for offset, requester in enumerate(requesters):
+        await insert_pending(requester, target, base + timedelta(seconds=offset))
+
+    first_page = await api.get("/follow-requests", headers=signed_in_as(target))
+    first_body = first_page.json()
+    assert len(first_body["items"]) == DEFAULT_PAGE_SIZE
+    cursor = first_body["nextCursor"]
+    assert cursor is not None
+
+    # A request nobody asked the first page about arrives while it is still
+    # being read, newer than everything seen so far.
+    await insert_pending(uuid.uuid4(), target, base + timedelta(seconds=1000))
+
+    second_page = await api.get(f"/follow-requests?cursor={cursor}", headers=signed_in_as(target))
+    second_body = second_page.json()
+
+    first_ids = [one["id"] for one in first_body["items"]]
+    second_ids = [one["id"] for one in second_body["items"]]
+    # The row inserted between the two reads is newer than the cursor, so it
+    # sorts before it and never appears on either page: it is next month's
+    # cursor's problem, not this pair's.
+    assert set(first_ids).isdisjoint(second_ids)
+    assert second_body["items"][0]["requesterHandle"] == handle_of(requesters[0])
+    assert second_body["nextCursor"] is None
+
+
+async def test_the_pending_listing_query_can_be_answered_with_an_index(api):
+    """The query the pending listing runs can be answered with an index scan.
+
+    The table is empty in this test, and PostgreSQL's planner picks a
+    sequential scan over an index on a handful of rows because it is genuinely
+    cheaper there, regardless of which indexes exist. Turning `enable_seqscan`
+    off for the query removes that shortcut and shows what the planner falls
+    back to: if `ix_follow_requests_target_pending_cursor` did not match the
+    query's columns, this would still show a sequential scan underneath a
+    forced index-only detour, not a real index scan.
+    """
+    async with app.state.session_factory() as session:
+        await session.execute(text("SET LOCAL enable_seqscan = off"))
+        plan = await session.execute(
+            text(
+                "EXPLAIN SELECT * FROM follow_requests "
+                "WHERE target_id = :target AND status = 'pending' "
+                "ORDER BY created_at DESC, id DESC LIMIT :limit"
+            ),
+            {"target": str(uuid.uuid4()), "limit": DEFAULT_PAGE_SIZE + 1},
+        )
+        plan_text = "\n".join(row[0] for row in plan)
+
+    assert "ix_follow_requests_target_pending_cursor" in plan_text
