@@ -11,12 +11,8 @@ from posts_api.api.follows import router as follows_router
 from posts_api.api.health import router as health_router
 from posts_api.app.errors import ProblemError
 from posts_api.app.security import load_public_key
-from posts_api.config.settings import get_settings
-
-# Imported for its side effect: the tables register themselves on Base.metadata
-# when the module loads, and create_all only sees what is registered.
-from posts_api.infrastructure.database import models  # noqa: F401
-from posts_api.infrastructure.database.session import Base, build_session_factory
+from posts_api.config.settings import API_PREFIX, get_settings
+from posts_api.infrastructure.database.session import build_session_factory
 
 
 @asynccontextmanager
@@ -39,11 +35,6 @@ async def lifespan(app: FastAPI):
     app.state.redis = Redis.from_url(settings.redis_url)
     app.state.jwt_public_key = load_public_key(settings.jwt_public_key)
 
-    # No Alembic yet: the service is not deployed, so there is no live data a
-    # migration would protect.
-    async with app.state.engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-
     yield
 
     await app.state.engine.dispose()
@@ -56,4 +47,4 @@ app.add_exception_handler(ProblemError, problem_error_handler)
 app.add_exception_handler(RequestValidationError, validation_error_handler)
 
 app.include_router(health_router)
-app.include_router(follows_router)
+app.include_router(follows_router, prefix=API_PREFIX)

@@ -11,7 +11,7 @@ from posts_api.api.errors import (
 from posts_api.app.errors import ProblemError
 
 
-def fake_request(path: str = "/users/@alguien/follow"):
+def fake_request(path: str = "/api/users/@alguien/follow"):
     """The handlers only read the path, to fill `instance`."""
     return SimpleNamespace(url=SimpleNamespace(path=path))
 
@@ -35,7 +35,7 @@ async def test_a_business_error_becomes_problem_details():
     assert response.media_type == PROBLEM_MEDIA_TYPE
     assert body["type"].endswith("/already-following")
     assert body["status"] == 409
-    assert body["instance"] == "/users/@alguien/follow"
+    assert body["instance"] == "/api/users/@alguien/follow"
     # Correlates the response with the logs.
     assert len(body["traceId"]) == 32
 

@@ -24,17 +24,25 @@ def par_de_claves() -> tuple[Ed25519PrivateKey, str]:
     return private, pem
 
 
-def firmar(private: Ed25519PrivateKey, *, expira_en_minutos: int = 15) -> str:
+def firmar(
+    private: Ed25519PrivateKey,
+    *,
+    issuer: str | None = "users-api",
+    expira_en_minutos: int = 15,
+) -> str:
     """Sign a token the same shape users-api issues."""
     ahora = datetime.now(UTC)
+    payload = {
+        "sub": str(uuid.uuid4()),
+        "role": "user",
+        "jti": str(uuid.uuid4()),
+        "iat": ahora,
+        "exp": ahora + timedelta(minutes=expira_en_minutos),
+    }
+    if issuer is not None:
+        payload["iss"] = issuer
     return jwt.encode(
-        {
-            "sub": str(uuid.uuid4()),
-            "role": "user",
-            "jti": str(uuid.uuid4()),
-            "iat": ahora,
-            "exp": ahora + timedelta(minutes=expira_en_minutos),
-        },
+        payload,
         private,
         algorithm=TOKEN_ALGORITHM,
     )
@@ -44,7 +52,7 @@ def test_a_token_signed_with_the_matching_key_is_accepted():
     private, pem = par_de_claves()
     token = firmar(private)
 
-    claims = decode_access_token(load_public_key(pem), token)
+    claims = decode_access_token(load_public_key(pem), token, issuer="users-api")
 
     assert uuid.UUID(claims["sub"])
     assert claims["role"] == "user"
@@ -56,7 +64,7 @@ def test_a_token_signed_with_another_key_is_rejected():
     token = firmar(otra_private)
 
     with pytest.raises(jwt.InvalidSignatureError):
-        decode_access_token(load_public_key(pem), token)
+        decode_access_token(load_public_key(pem), token, issuer="users-api")
 
 
 def test_an_expired_token_is_rejected():
@@ -64,16 +72,32 @@ def test_an_expired_token_is_rejected():
     token = firmar(private, expira_en_minutos=-1)
 
     with pytest.raises(jwt.ExpiredSignatureError):
-        decode_access_token(load_public_key(pem), token)
+        decode_access_token(load_public_key(pem), token, issuer="users-api")
 
 
 def test_a_token_that_claims_no_signature_is_rejected():
     """The alg:none attack: a token that asks to be trusted without a signature."""
     _, pem = par_de_claves()
-    token = jwt.encode({"sub": str(uuid.uuid4())}, key=None, algorithm="none")
+    token = jwt.encode({"iss": "users-api", "sub": str(uuid.uuid4())}, key=None, algorithm="none")
 
     with pytest.raises(jwt.InvalidAlgorithmError):
-        decode_access_token(load_public_key(pem), token)
+        decode_access_token(load_public_key(pem), token, issuer="users-api")
+
+
+def test_a_token_with_wrong_issuer_is_rejected():
+    private, pem = par_de_claves()
+    token = firmar(private, issuer="another-issuer")
+
+    with pytest.raises(jwt.InvalidIssuerError):
+        decode_access_token(load_public_key(pem), token, issuer="users-api")
+
+
+def test_a_token_missing_issuer_is_rejected():
+    private, pem = par_de_claves()
+    token = firmar(private, issuer=None)
+
+    with pytest.raises(jwt.MissingRequiredClaimError):
+        decode_access_token(load_public_key(pem), token, issuer="users-api")
 
 
 def test_a_private_key_is_not_accepted_as_the_public_one():

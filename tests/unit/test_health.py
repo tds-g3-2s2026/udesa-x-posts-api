@@ -1,5 +1,8 @@
+import httpx
 import pytest
+from fastapi import FastAPI
 
+from posts_api.api.health import router
 from posts_api.infrastructure.health import (
     DependencyStatus,
     build_report,
@@ -82,3 +85,22 @@ def test_a_single_failing_dependency_returns_503(failing):
     assert status_code == 503
     assert body["status"] == "degraded"
     assert body["dependencies"][failing] == "no connection"
+
+
+async def test_livez_reports_200_even_when_dependencies_fail():
+    """Liveness probe stays green even if postgres and redis are down, while readiness turns 503."""
+    app = FastAPI()
+    app.include_router(router)
+    app.state.engine = FakeEngine(fails=True)
+    app.state.redis = FakeRedis(fails=True)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        readiness_resp = await client.get("/healthcheck")
+        liveness_resp = await client.get("/livez")
+
+    assert readiness_resp.status_code == 503
+    assert readiness_resp.json()["status"] == "degraded"
+
+    assert liveness_resp.status_code == 200
+    assert liveness_resp.json() == {"status": "ok"}

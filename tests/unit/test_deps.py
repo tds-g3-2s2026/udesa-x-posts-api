@@ -11,11 +11,12 @@ from tests.conftest import issue_token
 
 
 def fake_request():
-    """The little the dependency reads from a request: the loaded public key."""
+    """The verification key and expected issuer loaded at startup."""
     import os
 
     key = load_public_key(os.environ["JWT_PUBLIC_KEY"])
-    return SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(jwt_public_key=key)))
+    state = SimpleNamespace(jwt_public_key=key, settings=SimpleNamespace(jwt_issuer="users-api"))
+    return SimpleNamespace(app=SimpleNamespace(state=state))
 
 
 def bearer(token: str) -> HTTPAuthorizationCredentials:

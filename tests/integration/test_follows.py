@@ -60,7 +60,7 @@ async def test_e3_h1_ca1_following_a_public_account_is_immediate(api):
     follower, followee = uuid.uuid4(), uuid.uuid4()
     await given_a_profile(followee)
 
-    response = await api.post(f"/users/{followee}/follow", headers=signed_in_as(follower))
+    response = await api.post(f"/api/users/{followee}/follow", headers=signed_in_as(follower))
 
     assert response.status_code == 204
     assert await is_following(follower, followee)
@@ -70,7 +70,7 @@ async def test_e3_h1_ca3_cannot_follow_yourself(api):
     user = uuid.uuid4()
     await given_a_profile(user)
 
-    response = await api.post(f"/users/{user}/follow", headers=signed_in_as(user))
+    response = await api.post(f"/api/users/{user}/follow", headers=signed_in_as(user))
 
     assert response.status_code == 409
     assert response.json()["type"].endswith("/cannot-follow-yourself")
@@ -81,8 +81,8 @@ async def test_following_twice_leaves_a_single_relationship(api):
     follower, followee = uuid.uuid4(), uuid.uuid4()
     await given_a_profile(followee)
 
-    first = await api.post(f"/users/{followee}/follow", headers=signed_in_as(follower))
-    second = await api.post(f"/users/{followee}/follow", headers=signed_in_as(follower))
+    first = await api.post(f"/api/users/{followee}/follow", headers=signed_in_as(follower))
+    second = await api.post(f"/api/users/{followee}/follow", headers=signed_in_as(follower))
 
     assert (first.status_code, second.status_code) == (204, 204)
     assert await is_following(follower, followee)
@@ -91,9 +91,9 @@ async def test_following_twice_leaves_a_single_relationship(api):
 async def test_unfollowing_removes_the_relationship(api):
     follower, followee = uuid.uuid4(), uuid.uuid4()
     await given_a_profile(followee)
-    await api.post(f"/users/{followee}/follow", headers=signed_in_as(follower))
+    await api.post(f"/api/users/{followee}/follow", headers=signed_in_as(follower))
 
-    response = await api.delete(f"/users/{followee}/follow", headers=signed_in_as(follower))
+    response = await api.delete(f"/api/users/{followee}/follow", headers=signed_in_as(follower))
 
     assert response.status_code == 204
     assert not await is_following(follower, followee)
@@ -103,13 +103,15 @@ async def test_unfollowing_an_account_that_was_not_followed_is_not_an_error(api)
     follower, followee = uuid.uuid4(), uuid.uuid4()
     await given_a_profile(followee)
 
-    response = await api.delete(f"/users/{followee}/follow", headers=signed_in_as(follower))
+    response = await api.delete(f"/api/users/{followee}/follow", headers=signed_in_as(follower))
 
     assert response.status_code == 204
 
 
 async def test_following_an_unknown_account_is_rejected(api):
-    response = await api.post(f"/users/{uuid.uuid4()}/follow", headers=signed_in_as(uuid.uuid4()))
+    response = await api.post(
+        f"/api/users/{uuid.uuid4()}/follow", headers=signed_in_as(uuid.uuid4())
+    )
 
     assert response.status_code == 404
     assert response.json()["type"].endswith("/user-not-found")
@@ -119,7 +121,7 @@ async def test_following_a_protected_account_is_not_available_yet(api):
     follower, followee = uuid.uuid4(), uuid.uuid4()
     await given_a_profile(followee, visibility="protected")
 
-    response = await api.post(f"/users/{followee}/follow", headers=signed_in_as(follower))
+    response = await api.post(f"/api/users/{followee}/follow", headers=signed_in_as(follower))
 
     assert response.status_code == 409
     assert response.json()["type"].endswith("/follow-needs-approval")
@@ -129,7 +131,7 @@ async def test_following_without_a_token_is_rejected(api):
     followee = uuid.uuid4()
     await given_a_profile(followee)
 
-    response = await api.post(f"/users/{followee}/follow")
+    response = await api.post(f"/api/users/{followee}/follow")
 
     assert response.status_code == 401
 
@@ -138,7 +140,7 @@ async def test_the_first_request_puts_the_signed_in_user_on_the_graph(api):
     follower, followee = uuid.uuid4(), uuid.uuid4()
     await given_a_profile(followee)
 
-    await api.post(f"/users/{followee}/follow", headers=signed_in_as(follower))
+    await api.post(f"/api/users/{followee}/follow", headers=signed_in_as(follower))
 
     async with app.state.session_factory() as session:
         assert await session.get(UserProfileModel, follower) is not None
@@ -156,7 +158,7 @@ async def test_e3_h1_ca4_counters_stay_consistent_under_concurrent_follows(api):
     followers = [uuid.uuid4() for _ in range(10)]
 
     responses = await asyncio.gather(
-        *(api.post(f"/users/{followee}/follow", headers=signed_in_as(f)) for f in followers)
+        *(api.post(f"/api/users/{followee}/follow", headers=signed_in_as(f)) for f in followers)
     )
 
     assert [r.status_code for r in responses] == [204] * 10
@@ -169,9 +171,9 @@ async def test_e3_h1_ca4_counters_stay_consistent_under_concurrent_follows(api):
 async def test_counters_go_back_down_when_the_follow_is_undone(api):
     follower, followee = uuid.uuid4(), uuid.uuid4()
     await given_a_profile(followee)
-    await api.post(f"/users/{followee}/follow", headers=signed_in_as(follower))
+    await api.post(f"/api/users/{followee}/follow", headers=signed_in_as(follower))
 
-    await api.delete(f"/users/{followee}/follow", headers=signed_in_as(follower))
+    await api.delete(f"/api/users/{followee}/follow", headers=signed_in_as(follower))
 
     assert await counters_of(followee) == (0, 0)
     assert await counters_of(follower) == (0, 0)
@@ -180,10 +182,10 @@ async def test_counters_go_back_down_when_the_follow_is_undone(api):
 async def test_unfollowing_twice_does_not_push_the_counters_below_zero(api):
     follower, followee = uuid.uuid4(), uuid.uuid4()
     await given_a_profile(followee)
-    await api.post(f"/users/{followee}/follow", headers=signed_in_as(follower))
+    await api.post(f"/api/users/{followee}/follow", headers=signed_in_as(follower))
 
-    await api.delete(f"/users/{followee}/follow", headers=signed_in_as(follower))
-    await api.delete(f"/users/{followee}/follow", headers=signed_in_as(follower))
+    await api.delete(f"/api/users/{followee}/follow", headers=signed_in_as(follower))
+    await api.delete(f"/api/users/{followee}/follow", headers=signed_in_as(follower))
 
     assert await counters_of(followee) == (0, 0)
 
@@ -192,8 +194,8 @@ async def test_following_the_same_account_twice_counts_once(api):
     follower, followee = uuid.uuid4(), uuid.uuid4()
     await given_a_profile(followee)
 
-    await api.post(f"/users/{followee}/follow", headers=signed_in_as(follower))
-    await api.post(f"/users/{followee}/follow", headers=signed_in_as(follower))
+    await api.post(f"/api/users/{followee}/follow", headers=signed_in_as(follower))
+    await api.post(f"/api/users/{followee}/follow", headers=signed_in_as(follower))
 
     assert await counters_of(followee) == (1, 0)
 
@@ -204,7 +206,7 @@ async def test_e3_h1_ca5_limits_follow_requests_to_fifty_per_hour(api):
     await given_a_profile(followee)
     await app.state.redis.set(f"follow:rate:{follower}", 50, ex=3600)
 
-    response = await api.post(f"/users/{followee}/follow", headers=signed_in_as(follower))
+    response = await api.post(f"/api/users/{followee}/follow", headers=signed_in_as(follower))
 
     assert response.status_code == 429
     assert response.json()["type"].endswith("/too-many-follows")
@@ -217,7 +219,7 @@ async def test_the_attempt_below_the_limit_still_goes_through(api):
     await given_a_profile(followee)
     await app.state.redis.set(f"follow:rate:{follower}", 49, ex=3600)
 
-    response = await api.post(f"/users/{followee}/follow", headers=signed_in_as(follower))
+    response = await api.post(f"/api/users/{followee}/follow", headers=signed_in_as(follower))
 
     assert response.status_code == 204
     assert await is_following(follower, followee)
@@ -229,8 +231,8 @@ async def test_the_limit_is_counted_per_account(api):
     await given_a_profile(followee)
     await app.state.redis.set(f"follow:rate:{blocked}", 50, ex=3600)
 
-    refused = await api.post(f"/users/{followee}/follow", headers=signed_in_as(blocked))
-    allowed = await api.post(f"/users/{followee}/follow", headers=signed_in_as(free))
+    refused = await api.post(f"/api/users/{followee}/follow", headers=signed_in_as(blocked))
+    allowed = await api.post(f"/api/users/{followee}/follow", headers=signed_in_as(free))
 
     assert (refused.status_code, allowed.status_code) == (429, 204)
 
@@ -240,9 +242,9 @@ async def test_the_window_does_not_move_forward_with_each_attempt(api):
     follower, followee = uuid.uuid4(), uuid.uuid4()
     await given_a_profile(followee)
 
-    await api.post(f"/users/{followee}/follow", headers=signed_in_as(follower))
+    await api.post(f"/api/users/{followee}/follow", headers=signed_in_as(follower))
     first_ttl = await app.state.redis.ttl(f"follow:rate:{follower}")
-    await api.post(f"/users/{uuid.uuid4()}/follow", headers=signed_in_as(follower))
+    await api.post(f"/api/users/{uuid.uuid4()}/follow", headers=signed_in_as(follower))
     second_ttl = await app.state.redis.ttl(f"follow:rate:{follower}")
 
     assert second_ttl <= first_ttl
