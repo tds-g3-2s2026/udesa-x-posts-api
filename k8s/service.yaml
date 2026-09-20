@@ -3,12 +3,14 @@ kind: Service
 metadata:
   name: posts-api
   namespace: tds-group-3
+  labels:
+    app: posts-api
 spec:
   type: ClusterIP
   selector:
     app: posts-api
   ports:
     - name: http
-      port: 8000
-      targetPort: 8000
+      port: 80
+      targetPort: http
       protocol: TCP
