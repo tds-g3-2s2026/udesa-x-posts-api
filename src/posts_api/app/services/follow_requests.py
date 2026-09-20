@@ -4,6 +4,7 @@ import uuid
 
 from posts_api.app.errors import ProblemError
 from posts_api.app.models.follow import Account, FollowRequestStatus, PendingFollowRequest
+from posts_api.app.pagination import DEFAULT_PAGE_SIZE, Cursor
 from posts_api.app.repositories.follow_requests import FollowRequestRepository
 from posts_api.app.repositories.follows import FollowRepository
 
@@ -13,8 +14,10 @@ class FollowRequestService:
         self._requests = requests
         self._follows = follows
 
-    async def pending_for(self, owner: Account) -> list[PendingFollowRequest]:
-        """The requests aimed at whoever is asking, never anyone else's.
+    async def pending_for(
+        self, owner: Account, *, cursor: str | None = None
+    ) -> tuple[list[PendingFollowRequest], str | None]:
+        """The requests aimed at whoever is asking, never anyone else's, one page at a time.
 
         The owner comes from the token and not from the URL, so there is no
         identifier a caller could change to read somebody else's list.
@@ -27,7 +30,8 @@ class FollowRequestService:
         ever be followed for the first time.
         """
         await self._follows.ensure_profile(owner)
-        return await self._requests.pending_for(owner.id)
+        decoded = Cursor.decode(cursor) if cursor is not None else None
+        return await self._requests.pending_for(owner.id, cursor=decoded, limit=DEFAULT_PAGE_SIZE)
 
     async def approve(self, owner: Account, request_id: uuid.UUID) -> None:
         """Answer yes: the relationship is established and the counters move.
