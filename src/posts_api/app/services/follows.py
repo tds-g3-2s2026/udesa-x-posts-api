@@ -88,11 +88,22 @@ class FollowService:
         return None
 
     async def unfollow(self, follower: Account, followee_id: uuid.UUID) -> None:
-        """Undo the relationship. Not following the account is already the result."""
+        """Undo the relationship, or withdraw the ask that never got an answer.
+
+        Both are the same intention from the outside: whoever presses the
+        button wants to stop following that account, and whether what exists is
+        a relationship or a request waiting is not something they can see.
+        """
         follower_id = follower.id
         removed = await self._repository.remove_follow(follower_id, followee_id)
         if removed:
             await self._repository.move_counters(follower_id, followee_id, by=-1)
+            return
+
+        # There was no relationship, so what is being undone may be a request
+        # nobody answered yet. Counters do not move: a pending request never
+        # moved them in the first place.
+        await self._requests.cancel(follower_id, followee_id)
 
     async def _charge_the_rate_limit(self, follower_id: uuid.UUID) -> None:
         """Count the attempt, and refuse it if the window is already full.

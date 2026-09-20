@@ -88,6 +88,24 @@ class FollowRequestRepository:
             .values(status=status)
         )
 
+    async def cancel(self, requester_id: uuid.UUID, target_id: uuid.UUID) -> bool:
+        """Withdraw an open request, and report whether there was one.
+
+        The status is part of the condition, like in `resolve`: a request the
+        owner already answered is theirs and does not get rewritten by the one
+        who asked.
+        """
+        result = await self._session.execute(
+            update(FollowRequestModel)
+            .where(
+                FollowRequestModel.requester_id == requester_id,
+                FollowRequestModel.target_id == target_id,
+                FollowRequestModel.status == FollowRequestStatus.PENDING,
+            )
+            .values(status=FollowRequestStatus.CANCELLED)
+        )
+        return result.rowcount > 0
+
     async def pending_for(self, target_id: uuid.UUID) -> list[PendingFollowRequest]:
         """The requests aimed at an account, newest first.
 
