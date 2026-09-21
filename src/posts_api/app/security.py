@@ -19,10 +19,16 @@ def load_public_key(pem: str) -> Ed25519PublicKey:
     return key
 
 
-def decode_access_token(public_key: Ed25519PublicKey, token: str) -> dict:
-    """Check the signature and the expiry, and return the claims.
+def decode_access_token(public_key: Ed25519PublicKey, token: str, *, issuer: str) -> dict:
+    """Check the signature, the expiry, and the issuer, and return the claims.
 
     The algorithm is pinned to a single value: accepting whatever the token
     announces is how the `alg:none` and the HS256 confusion attacks work.
     """
-    return jwt.decode(token, public_key, algorithms=[TOKEN_ALGORITHM])
+    return jwt.decode(
+        token,
+        public_key,
+        algorithms=[TOKEN_ALGORITHM],
+        issuer=issuer,
+        options={"require": ["iss"]},
+    )

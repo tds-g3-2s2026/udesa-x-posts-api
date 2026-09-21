@@ -48,13 +48,17 @@ BearerDep = Annotated[HTTPAuthorizationCredentials, Depends(bearer_scheme)]
 def get_current_user(request: Request, credentials: BearerDep) -> Account:
     """The account behind the bearer token.
 
-    Signature and expiry are all this service checks. Revocation is recorded in
+    Signature, expiry and issuer are checked locally. Revocation is recorded in
     the Redis of users-api, which posts-api does not share, so a token closed by
     a logout keeps working here until it expires on its own: fifteen minutes at
     most. Narrowing that window needs the revocation events from the queue.
     """
     try:
-        claims = decode_access_token(request.app.state.jwt_public_key, credentials.credentials)
+        claims = decode_access_token(
+            request.app.state.jwt_public_key,
+            credentials.credentials,
+            issuer=request.app.state.settings.jwt_issuer,
+        )
     except jwt.InvalidTokenError as exc:
         raise ProblemError(
             status=401,

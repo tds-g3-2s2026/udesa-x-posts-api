@@ -8,3 +8,4 @@ __pycache__/
 htmlcov/
 coverage.xml
 report.xml
+k8s/secret.yaml

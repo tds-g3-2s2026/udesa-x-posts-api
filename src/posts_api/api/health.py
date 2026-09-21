@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse
 
 from posts_api.infrastructure.health import build_report, check_postgres, check_redis
@@ -16,3 +16,13 @@ async def healthcheck(request: Request) -> JSONResponse:
     ]
     body, status_code = build_report(statuses)
     return JSONResponse(body, status_code=status_code)
+
+
+@router.get("/livez", status_code=status.HTTP_200_OK)
+async def livez() -> dict[str, str]:
+    """Report that the process is running and accepting HTTP requests.
+
+    Does not touch PostgreSQL or Redis: a liveness failure restarts the pod, and
+    restarting a pod whose database is slow makes the outage worse, not better.
+    """
+    return {"status": "ok"}

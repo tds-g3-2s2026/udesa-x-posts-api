@@ -37,6 +37,7 @@ def main() -> None:
     now = datetime.now(UTC)
     token = jwt.encode(
         {
+            "iss": "users-api",
             "sub": subject,
             "role": "user",
             "jti": str(uuid.uuid4()),

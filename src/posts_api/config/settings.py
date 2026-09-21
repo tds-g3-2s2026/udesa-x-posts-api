@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     # one, so it refuses to start rather than accept everything.
     jwt_public_key: str
 
+    jwt_issuer: str = "users-api"
     # E3-H1 CA.5: fifty follows per hour. They are settings and not constants
     # so a load test can lower them without touching the code.
     follow_rate_limit: int = 50

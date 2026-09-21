@@ -10,6 +10,8 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project
 
 COPY src/ ./src/
+COPY alembic.ini ./
+COPY migrations/ ./migrations/
 RUN uv sync --locked --no-dev
 
 # Tests only. Sits before the final stage because `docker build` without
@@ -39,6 +41,8 @@ WORKDIR /app
 
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
 COPY --from=builder --chown=app:app /app/src /app/src
+COPY --from=builder --chown=app:app /app/alembic.ini /app/alembic.ini
+COPY --from=builder --chown=app:app /app/migrations /app/migrations
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
