@@ -121,8 +121,29 @@ def upgrade() -> None:
         postgresql_where=sa.text("status = 'pending'"),
     )
 
+    op.create_table(
+        "posts",
+        sa.Column("id", sa.UUID(), server_default=sa.text("uuidv7()"), nullable=False),
+        sa.Column("author_id", sa.UUID(), nullable=False),
+        sa.Column("content", sa.String(length=280), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column("likes_count", sa.Integer(), server_default="0", nullable=False),
+        sa.Column("retweets_count", sa.Integer(), server_default="0", nullable=False),
+        sa.Column("replies_count", sa.Integer(), server_default="0", nullable=False),
+        sa.ForeignKeyConstraint(["author_id"], ["user_profiles.id"]),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(op.f("ix_posts_author_id"), "posts", ["author_id"], unique=False)
+
 
 def downgrade() -> None:
+    op.drop_index(op.f("ix_posts_author_id"), table_name="posts")
+    op.drop_table("posts")
     op.drop_index("ix_follow_requests_target_pending_cursor", table_name="follow_requests")
     op.drop_index("uq_follow_requests_open_pair", table_name="follow_requests")
     op.drop_index(op.f("ix_follow_requests_target_id"), table_name="follow_requests")
