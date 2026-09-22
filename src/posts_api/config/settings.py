@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # so a load test can lower them without touching the code.
     follow_rate_limit: int = 50
     follow_rate_window_seconds: int = 3600
+    # Thirty posts per hour, same reasoning as the follow limit above.
+    post_rate_limit: int = 30
+    post_rate_window_seconds: int = 3600
 
     log_level: str = "INFO"
 
