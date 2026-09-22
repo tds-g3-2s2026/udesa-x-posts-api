@@ -10,6 +10,7 @@ from posts_api.api.errors import problem_error_handler, validation_error_handler
 from posts_api.api.follow_requests import router as follow_requests_router
 from posts_api.api.follows import router as follows_router
 from posts_api.api.health import router as health_router
+from posts_api.api.posts import router as posts_router
 from posts_api.app.errors import ProblemError
 from posts_api.app.security import load_public_key
 from posts_api.config.settings import API_PREFIX, get_settings
@@ -52,3 +53,4 @@ app.add_exception_handler(RequestValidationError, validation_error_handler)
 app.include_router(health_router)
 app.include_router(follows_router, prefix=API_PREFIX)
 app.include_router(follow_requests_router, prefix=API_PREFIX)
+app.include_router(posts_router, prefix=API_PREFIX)
