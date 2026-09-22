@@ -9,6 +9,7 @@ from sqlalchemy import delete
 from posts_api.infrastructure.database.models import (
     FollowModel,
     FollowRequestModel,
+    PostModel,
     UserProfileModel,
 )
 from posts_api.main import app
@@ -26,6 +27,8 @@ async def api():
         async with app.state.session_factory() as session:
             await session.execute(delete(FollowRequestModel))
             await session.execute(delete(FollowModel))
+            # Before the profiles: both tables carry a foreign key to it.
+            await session.execute(delete(PostModel))
             await session.execute(delete(UserProfileModel))
             await session.commit()
         # The rate limit counters live outside PostgreSQL, so emptying the
