@@ -138,11 +138,11 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["author_id"], ["user_profiles.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_posts_author_id"), "posts", ["author_id"], unique=False)
+    op.create_index("ix_posts_author_created", "posts", ["author_id", "created_at", "id"])
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_posts_author_id"), table_name="posts")
+    op.drop_index("ix_posts_author_created", table_name="posts")
     op.drop_table("posts")
     op.drop_index("ix_follow_requests_target_pending_cursor", table_name="follow_requests")
     op.drop_index("uq_follow_requests_open_pair", table_name="follow_requests")

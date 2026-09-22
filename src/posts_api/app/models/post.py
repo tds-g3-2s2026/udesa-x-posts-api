@@ -25,3 +25,23 @@ class Post:
     likes_count: int = 0
     retweets_count: int = 0
     replies_count: int = 0
+
+
+@dataclass(frozen=True)
+class PostWithAuthor:
+    """A post plus the handle of whoever wrote it, the way a reading screen needs it.
+
+    Not the same as `Post`: that one is the row, and this one is the row plus
+    a field that lives on the author's profile. The feed and the single-post
+    view both read this shape, resolving the handle in the same query instead
+    of one round trip per row.
+    """
+
+    id: uuid.UUID
+    author_id: uuid.UUID
+    author_handle: str | None
+    content: str
+    created_at: datetime
+    likes_count: int
+    retweets_count: int
+    replies_count: int
