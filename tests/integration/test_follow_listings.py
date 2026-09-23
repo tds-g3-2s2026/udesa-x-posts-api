@@ -36,6 +36,14 @@ async def insert_follow(
         await session.commit()
 
 
+async def given_a_profile_with_followers(user_id: uuid.UUID, followers_count: int) -> None:
+    async with app.state.session_factory() as session:
+        session.add(
+            UserProfileModel(id=user_id, handle=handle_of(user_id), followers_count=followers_count)
+        )
+        await session.commit()
+
+
 async def make_protected(user_id: uuid.UUID) -> None:
     async with app.state.session_factory() as session:
         profile = await session.get(UserProfileModel, user_id)
@@ -201,3 +209,60 @@ async def test_reading_either_listing_puts_the_caller_on_the_graph(api):
         profile = await session.get(UserProfileModel, newcomer)
         assert profile is not None
         assert profile.handle == handle_of(newcomer)
+
+
+async def test_suggested_accounts_are_ordered_by_followers_count(api):
+    viewer = uuid.uuid4()
+    await given_a_profile(viewer)
+    popular, medium, unpopular = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    await given_a_profile_with_followers(popular, 100)
+    await given_a_profile_with_followers(medium, 10)
+    await given_a_profile_with_followers(unpopular, 1)
+
+    response = await api.get("/users/suggested", headers=signed_in_as(viewer))
+
+    assert response.status_code == 200
+    ids = [one["id"] for one in response.json()]
+    assert ids == [str(popular), str(medium), str(unpopular)]
+
+
+async def test_suggested_accounts_exclude_the_viewer(api):
+    viewer = uuid.uuid4()
+    await given_a_profile_with_followers(viewer, 1000)
+
+    response = await api.get("/users/suggested", headers=signed_in_as(viewer))
+
+    assert str(viewer) not in [one["id"] for one in response.json()]
+
+
+async def test_suggested_accounts_exclude_accounts_already_followed(api):
+    viewer, followed, not_followed = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    await given_a_profile_with_followers(followed, 100)
+    await given_a_profile_with_followers(not_followed, 1)
+    await insert_follow(viewer, followed, datetime.now(UTC))
+
+    response = await api.get("/users/suggested", headers=signed_in_as(viewer))
+
+    ids = [one["id"] for one in response.json()]
+    assert str(followed) not in ids
+    assert str(not_followed) in ids
+
+
+async def test_a_suggested_account_carries_the_fields_the_screen_needs(api):
+    viewer, popular = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(viewer)
+    await given_a_profile_with_followers(popular, 42)
+
+    response = await api.get("/users/suggested", headers=signed_in_as(viewer))
+
+    row = response.json()[0]
+    assert set(row) == {"id", "handle", "displayName", "avatarUrl", "followersCount"}
+    assert row["handle"] == handle_of(popular)
+    assert row["followersCount"] == 42
+    assert (row["displayName"], row["avatarUrl"]) == (None, None)
+
+
+async def test_suggested_accounts_needs_a_token(api):
+    response = await api.get("/users/suggested")
+
+    assert response.status_code == 401

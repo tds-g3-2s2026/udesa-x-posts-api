@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Response, status
 
 from posts_api.api.deps import CurrentUserDep, RedisDep, SessionDep
-from posts_api.api.schemas.follow_listings import FollowListItemSummary
+from posts_api.api.schemas.follow_listings import FollowListItemSummary, SuggestedAccountSummary
 from posts_api.api.schemas.pagination import CursorPage
 from posts_api.app.repositories.follow_listings import FollowListingRepository
 from posts_api.app.repositories.follow_requests import FollowRequestRepository
@@ -57,6 +57,19 @@ async def follow(user_id: uuid.UUID, current_user: CurrentUserDep, service: Serv
 @router.delete("/{user_id}/follow", status_code=status.HTTP_204_NO_CONTENT)
 async def unfollow(user_id: uuid.UUID, current_user: CurrentUserDep, service: ServiceDep) -> None:
     await service.unfollow(current_user, user_id)
+
+
+@router.get("/suggested")
+async def suggested(
+    current_user: CurrentUserDep, service: ListingServiceDep
+) -> list[SuggestedAccountSummary]:
+    """The most-followed accounts the caller does not already follow.
+
+    A fixed-size list and not a `CursorPage`: this is a suggestion box, not a
+    listing anyone scrolls through.
+    """
+    profiles = await service.suggested_accounts(current_user)
+    return [SuggestedAccountSummary.of(one) for one in profiles]
 
 
 @router.get("/{user_id}/followers")

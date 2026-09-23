@@ -8,10 +8,14 @@ touching it here would land two people's changes on the same lines.
 import uuid
 
 from posts_api.app.errors import ProblemError
-from posts_api.app.models.follow import Account, FollowListItem, ProfileVisibility
+from posts_api.app.models.follow import Account, FollowListItem, ProfileVisibility, UserProfile
 from posts_api.app.pagination import Cursor
 from posts_api.app.repositories.follow_listings import FollowListingRepository
 from posts_api.app.repositories.follows import FollowRepository
+
+# A fixed-size suggestion box, not a paginated listing: there is no scenario
+# where a client asks for a second page of "who to follow".
+SUGGESTED_ACCOUNTS_LIMIT = 10
 
 
 class FollowListingService:
@@ -32,6 +36,11 @@ class FollowListingService:
         await self._authorize(user_id, viewer)
         decoded = Cursor.decode(cursor) if cursor is not None else None
         return await self._listings.following_of(user_id, viewer_id=viewer.id, cursor=decoded)
+
+    async def suggested_accounts(self, viewer: Account) -> list[UserProfile]:
+        """The most-followed accounts the viewer does not already follow."""
+        await self._follows.ensure_profile(viewer)
+        return await self._follows.suggested_for(viewer.id, limit=SUGGESTED_ACCOUNTS_LIMIT)
 
     async def _authorize(self, user_id: uuid.UUID, viewer: Account) -> None:
         """Put the viewer on the graph, then decide whether they get to read this account's lists.
