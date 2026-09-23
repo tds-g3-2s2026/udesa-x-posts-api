@@ -5,7 +5,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from posts_api.app.models.follow import FollowListItem
+from posts_api.app.models.follow import FollowListItem, UserProfile
 
 
 class FollowListItemSummary(BaseModel):
@@ -33,3 +33,17 @@ class FollowListItemSummary(BaseModel):
             following=item.followed_by_viewer,
             created_at=item.created_at,
         )
+
+
+class SuggestedAccountSummary(BaseModel):
+    """One row of the "who to follow" empty state."""
+
+    id: uuid.UUID
+    handle: str | None
+    display_name: str | None = Field(default=None, serialization_alias="displayName")
+    avatar_url: str | None = Field(default=None, serialization_alias="avatarUrl")
+    followers_count: int = Field(serialization_alias="followersCount")
+
+    @classmethod
+    def of(cls, profile: UserProfile) -> "SuggestedAccountSummary":
+        return cls(id=profile.id, handle=profile.handle, followers_count=profile.followers_count)
