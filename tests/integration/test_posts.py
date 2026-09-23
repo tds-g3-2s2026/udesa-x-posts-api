@@ -1,10 +1,20 @@
 import uuid
 
+from posts_api.infrastructure.database.models import FollowModel, UserProfileModel
 from posts_api.main import app
 from tests.conftest import requires_services
-from tests.integration.conftest import signed_in_as
+from tests.integration.conftest import given_a_profile, handle_of, signed_in_as
 
 pytestmark = requires_services
+
+
+async def approve_follow(follower_id: uuid.UUID, followee_id: uuid.UUID) -> None:
+    async with app.state.session_factory() as session:
+        if await session.get(UserProfileModel, follower_id) is None:
+            session.add(UserProfileModel(id=follower_id, handle=handle_of(follower_id)))
+            await session.flush()
+        session.add(FollowModel(follower_id=follower_id, followee_id=followee_id))
+        await session.commit()
 
 
 async def test_e2_h1_ca4_creating_a_post_stores_the_author_content_and_counters_at_zero(api):
@@ -150,3 +160,61 @@ async def test_a_rejected_attempt_still_counts_against_the_limit(api):
     assert response.status_code == 422
     assert response.json()["type"].endswith("/post-is-blank")
     assert int(await app.state.redis.get(f"post:rate:{author}")) == 6
+
+
+async def test_a_public_authors_post_can_be_read_by_anyone(api):
+    author, viewer = uuid.uuid4(), uuid.uuid4()
+    created = await api.post("/posts", json={"content": "hola"}, headers=signed_in_as(author))
+    post_id = created.json()["id"]
+
+    response = await api.get(f"/posts/{post_id}", headers=signed_in_as(viewer))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == post_id
+    assert body["authorId"] == str(author)
+    assert body["authorHandle"] == handle_of(author)
+    assert body["content"] == "hola"
+    assert (body["authorDisplayName"], body["authorAvatarUrl"]) == (None, None)
+
+
+async def test_e2_h2_ca5_a_protected_authors_post_needs_an_approved_follow(api):
+    author, follower, stranger = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(author, visibility="protected")
+    created = await api.post(
+        "/posts", json={"content": "solo aprobados"}, headers=signed_in_as(author)
+    )
+    post_id = created.json()["id"]
+    await approve_follow(follower, author)
+    await given_a_profile(stranger)
+
+    approved = await api.get(f"/posts/{post_id}", headers=signed_in_as(follower))
+    refused = await api.get(f"/posts/{post_id}", headers=signed_in_as(stranger))
+
+    assert approved.status_code == 200
+    assert refused.status_code == 404
+    assert refused.json()["type"].endswith("/post-not-found")
+
+
+async def test_an_author_can_always_read_their_own_protected_post(api):
+    author = uuid.uuid4()
+    await given_a_profile(author, visibility="protected")
+    created = await api.post("/posts", json={"content": "mio"}, headers=signed_in_as(author))
+    post_id = created.json()["id"]
+
+    response = await api.get(f"/posts/{post_id}", headers=signed_in_as(author))
+
+    assert response.status_code == 200
+
+
+async def test_a_nonexistent_post_is_a_404(api):
+    response = await api.get(f"/posts/{uuid.uuid4()}", headers=signed_in_as(uuid.uuid4()))
+
+    assert response.status_code == 404
+    assert response.json()["type"].endswith("/post-not-found")
+
+
+async def test_reading_a_post_needs_a_token(api):
+    response = await api.get(f"/posts/{uuid.uuid4()}")
+
+    assert response.status_code == 401
