@@ -10,7 +10,7 @@ import uuid
 
 from posts_api.app.errors import ProblemError
 from posts_api.app.models.follow import Account
-from posts_api.app.models.post import Post
+from posts_api.app.models.post import Post, PostWithAuthor
 from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.posts import PostRepository
 from posts_api.app.repositories.rate_limiter import RateLimiter
@@ -80,6 +80,24 @@ class PostService:
             )
 
         return await self._posts.create(author.id, sanitized)
+
+    async def get(self, post_id: uuid.UUID, viewer: Account) -> PostWithAuthor:
+        """A single post, or `404` if it does not exist or the viewer cannot see it.
+
+        Both cases answer the same way and for the same reason `FollowRequestService`
+        already uses for a request aimed at somebody else: telling them apart
+        would confirm that a protected account's post exists, which is exactly
+        what the visibility rule exists to keep from leaking.
+        """
+        post = await self._posts.find_visible(post_id, viewer_id=viewer.id)
+        if post is None:
+            raise ProblemError(
+                status=404,
+                code="post-not-found",
+                title="No se pudo obtener el post",
+                detail="El post no existe",
+            )
+        return post
 
     async def _charge_the_rate_limit(self, author_id: uuid.UUID) -> None:
         """Count the attempt before anything else runs.
