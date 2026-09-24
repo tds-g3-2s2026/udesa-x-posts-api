@@ -1,5 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
+from importlib.metadata import version
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -44,7 +45,7 @@ async def lifespan(app: FastAPI):
     await app.state.redis.aclose()
 
 
-app = FastAPI(title="UdeSA-X Posts API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="UdeSA-X Posts API", version=version("posts-api"), lifespan=lifespan)
 
 app.add_exception_handler(ProblemError, problem_error_handler)
 app.add_exception_handler(RequestValidationError, validation_error_handler)

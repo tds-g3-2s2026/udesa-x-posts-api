@@ -8,14 +8,14 @@ router = APIRouter(tags=["health"])
 
 @router.get("/healthcheck")
 async def healthcheck(request: Request) -> JSONResponse:
-    """Check PostgreSQL and Redis before reporting the service as healthy."""
+    """Check PostgreSQL and Redis, and report the version that is running."""
     state = request.app.state
     statuses = [
         await check_postgres(state.engine),
         await check_redis(state.redis),
     ]
     body, status_code = build_report(statuses)
-    return JSONResponse(body, status_code=status_code)
+    return JSONResponse({**body, "version": request.app.version}, status_code=status_code)
 
 
 @router.get("/livez", status_code=status.HTTP_200_OK)
