@@ -1,3 +1,6 @@
+import tomllib
+from pathlib import Path
+
 import httpx
 import pytest
 
@@ -27,3 +30,12 @@ async def test_healthcheck_reports_every_dependency_as_ok(api):
     body = response.json()
     assert body["status"] == "ok"
     assert body["dependencies"] == {"postgres": "ok", "redis": "ok"}
+
+
+async def test_healthcheck_reports_the_version_declared_in_pyproject(api):
+    pyproject = Path(__file__).parents[2] / "pyproject.toml"
+    declared = tomllib.loads(pyproject.read_text())["project"]["version"]
+
+    response = await api.get("/healthcheck")
+
+    assert response.json()["version"] == declared
