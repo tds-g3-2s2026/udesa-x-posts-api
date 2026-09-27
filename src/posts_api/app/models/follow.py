@@ -116,3 +116,12 @@ class FollowRequest:
     def is_pending(self) -> bool:
         """Only a pending request can be approved or rejected."""
         return self.status is FollowRequestStatus.PENDING
+
+
+@dataclass(frozen=True)
+class BlockedAccount:
+    """One row of the blocked-accounts screen: who, and since when."""
+
+    id: uuid.UUID
+    handle: str | None
+    created_at: datetime

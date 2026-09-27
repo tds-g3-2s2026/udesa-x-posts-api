@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from posts_api.api.deps import CurrentUserDep, RedisDep, SessionDep
 from posts_api.api.schemas.follow_listings import FollowListItemSummary
 from posts_api.api.schemas.pagination import CursorPage
+from posts_api.app.repositories.blocks import BlockRepository
 from posts_api.app.repositories.follow_listings import FollowListingRepository
 from posts_api.app.repositories.follow_requests import FollowRequestRepository
 from posts_api.app.repositories.follows import FollowRepository
@@ -23,6 +24,7 @@ def get_follow_service(session: SessionDep, redis: RedisDep) -> FollowService:
     return FollowService(
         FollowRepository(session),
         FollowRequestRepository(session),
+        BlockRepository(session),
         RedisRateLimiter(redis),
         follow_limit=settings.follow_rate_limit,
         window_seconds=settings.follow_rate_window_seconds,
@@ -33,7 +35,9 @@ ServiceDep = Annotated[FollowService, Depends(get_follow_service)]
 
 
 def get_follow_listing_service(session: SessionDep) -> FollowListingService:
-    return FollowListingService(FollowListingRepository(session), FollowRepository(session))
+    return FollowListingService(
+        FollowListingRepository(session), FollowRepository(session), BlockRepository(session)
+    )
 
 
 ListingServiceDep = Annotated[FollowListingService, Depends(get_follow_listing_service)]
