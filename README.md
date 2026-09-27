@@ -65,28 +65,24 @@ dentro del LimitRange de plataforma. El rollout usa `maxSurge: 1` y
 `maxUnavailable: 0` para mantener el pod anterior hasta que el nuevo esté listo,
 reservando un slot temporal en la cuota (no promete alta disponibilidad).
 
-En producción, las migraciones de base de datos (`alembic upgrade head`) deben correrse en un paso
-previo al rollout del Deployment usando la misma imagen e inyectando las credenciales correspondientes.
-El futuro pipeline de CD es responsable de reservar el cupo temporal y esperar su éxito antes del
-despliegue. No se incluyen Jobs en esta carpeta; el CD manejará sus ejecuciones explícitamente.
-La aplicación no realiza migraciones al arrancar.
-
-El Deployment contiene el marcador `${ECR_IMAGE}`, autorizado hasta disponer de
-la URI asignada por la cátedra. Kubernetes no lo sustituye: el futuro pipeline
-debe reemplazarlo por la URI completa de ECR con tag por SHA o digest **antes**
-de aplicar. El prefijo sale del secret `ECR_URI_PREFIX` definido en plataforma;
-no se inventa el Account ID ni el nombre del repositorio.
+Cada push a `main` que pasa el CI despliega solo, con el job `deploy` de
+`.github/workflows/ci.yml`, que llama a `deploy.yml` de `udesa-x-platform`. Ese pipeline
+publica la imagen en ECR, reemplaza `${ECR_IMAGE}` por su referencia por digest y corre
+`alembic upgrade head` como Job con la misma imagen antes del rollout. Si la migración falla,
+el despliegue se corta con los pods anteriores sirviendo. La aplicación no realiza
+migraciones al arrancar. Qué hace paso por paso está en el README de `udesa-x-platform`,
+sección "Despliegue continuo".
 
 `configmap.yaml` define `LOG_LEVEL`, `FOLLOW_RATE_LIMIT`, `FOLLOW_RATE_WINDOW_SECONDS`
 y `JWT_ISSUER` (`users-api`). La API valida estrictamente el issuer al verificar tokens
 recibidos. Copiar `secret.template.yaml` a `secret.yaml`,
 ignorado por git, y completar `DATABASE_URL` (con esquema `postgresql+asyncpg://`),
-`REDIS_URL` y `JWT_PUBLIC_KEY` (clave pública Ed25519 en PEM). En CI, los valores
-provienen de GitHub Secrets. No aplicar la plantilla vacía ni usar
-`kubectl apply -f k8s/` en un despliegue: incluiría esa plantilla.
-Cambiar un Secret o ConfigMap no actualiza `envFrom` en los contenedores existentes:
-el CD debe reemplazar los pods para que lean los valores nuevos. Usar la pública
-correspondiente a la privada estable de users; los tokens antiguos sin `iss` se rechazan.
+`REDIS_URL` y `JWT_PUBLIC_KEY` (clave pública Ed25519 en PEM). En el despliegue, el pipeline
+arma el Secret con esos tres GitHub Secrets del repositorio. No aplicar la plantilla vacía ni
+usar `kubectl apply -f k8s/` en un despliegue: incluiría esa plantilla.
+`envFrom` se lee al crear el contenedor: el pipeline pone el hash del ConfigMap y del Secret
+en el pod template, así que un cambio solo de configuración también reemplaza los pods. La
+pública corresponde a la privada estable de users; los tokens antiguos sin `iss` se rechazan.
 
 Validación sin escribir recursos:
 

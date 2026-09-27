@@ -11,3 +11,18 @@ jobs:
       # ARQUITECTURA.md turns the gate on for the backend services in S3. Below
       # the minimum the PR goes red and cannot be merged.
       bloquear-por-cobertura: true
+
+  # Only a commit on main that passed CI reaches the cluster. The pipeline and
+  # what it applies are documented in udesa-x-platform, "Despliegue continuo".
+  deploy:
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: tds-g3-2s2026/udesa-x-platform/.github/workflows/deploy.yml@main
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      servicio: posts-api
+      secretos: DATABASE_URL REDIS_URL JWT_PUBLIC_KEY
+      migracion: alembic upgrade head
