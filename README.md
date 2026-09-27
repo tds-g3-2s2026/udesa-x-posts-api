@@ -126,8 +126,13 @@ El esquema se gestiona con Alembic (`alembic.ini` y `migrations/`).
 uv run alembic upgrade head          # aplicar
 ```
 
-**Una sola migración inicial** (`migrations/versions/0001_esquema_actual.py`) para los modelos
-actuales de `posts-api` (`user_profiles`, `follows`, `follow_requests`).
+| Migración | Qué crea |
+|---|---|
+| `0001_esquema_actual` | `user_profiles`, `follows`, `follow_requests` y `posts` |
+| `0002_bloqueos` | `blocks` |
+
+**Una migración ya aplicada no se edita**: una base que ya la corrió no la vuelve a correr, así
+que el cambio nunca llegaría. Todo cambio de esquema va en una migración nueva.
 
 **Transición de base de datos:** el primer despliegue productivo arranca sobre una base vacía y
 aplica la migración inicial. No debe stampearse a ciegas (`alembic stamp`) contra bases existentes
