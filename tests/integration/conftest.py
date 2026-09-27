@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import delete
 
 from posts_api.infrastructure.database.models import (
+    BlockModel,
     FollowModel,
     FollowRequestModel,
     PostModel,
@@ -25,6 +26,7 @@ async def api():
     """
     async with app.router.lifespan_context(app):
         async with app.state.session_factory() as session:
+            await session.execute(delete(BlockModel))
             await session.execute(delete(FollowRequestModel))
             await session.execute(delete(FollowModel))
             # Before the profiles: both tables carry a foreign key to it.
