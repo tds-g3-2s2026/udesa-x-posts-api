@@ -14,10 +14,12 @@ from posts_api.api.follow_requests import router as follow_requests_router
 from posts_api.api.follows import router as follows_router
 from posts_api.api.health import router as health_router
 from posts_api.api.posts import router as posts_router
+from posts_api.api.reports import router as reports_router
 from posts_api.app.errors import ProblemError
 from posts_api.app.security import load_public_key
 from posts_api.config.settings import API_PREFIX, get_settings
 from posts_api.infrastructure.database.session import build_session_factory
+from posts_api.infrastructure.users_api.account_review import build_users_api_client
 
 
 @asynccontextmanager
@@ -39,11 +41,15 @@ async def lifespan(app: FastAPI):
     app.state.session_factory = build_session_factory(app.state.engine)
     app.state.redis = Redis.from_url(settings.redis_url)
     app.state.jwt_public_key = load_public_key(settings.jwt_public_key)
+    app.state.users_api = build_users_api_client(
+        settings.users_api_url, settings.internal_api_token
+    )
 
     yield
 
     await app.state.engine.dispose()
     await app.state.redis.aclose()
+    await app.state.users_api.aclose()
 
 
 app = FastAPI(title="UdeSA-X Posts API", version=version("posts-api"), lifespan=lifespan)
@@ -59,3 +65,4 @@ app.include_router(follow_requests_router, prefix=API_PREFIX)
 app.include_router(posts_router, prefix=API_PREFIX)
 app.include_router(feed_router, prefix=API_PREFIX)
 app.include_router(blocks_router, prefix=API_PREFIX)
+app.include_router(reports_router, prefix=API_PREFIX)
