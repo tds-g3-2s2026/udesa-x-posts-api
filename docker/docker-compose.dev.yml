@@ -17,6 +17,11 @@ services:
         -----BEGIN PUBLIC KEY-----
         MCowBQYDK2VwAyEARApo9EwI+QfBFaEGEuai1VDicsNo3gpNXJ+qzVkfaeU=
         -----END PUBLIC KEY-----
+      # Development only. users-api is not part of this compose, so the call
+      # that puts an account under review fails and is logged: reports still
+      # work. To try it end to end, point USERS_API_URL at a users-api that
+      # has this same value.
+      INTERNAL_API_TOKEN: dev-internal-token
     command: >-
       sh -c "alembic upgrade head &&
              uvicorn posts_api.main:app --host 0.0.0.0 --port 8000 --workers 1"

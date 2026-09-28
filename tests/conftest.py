@@ -48,6 +48,10 @@ os.environ["JWT_PUBLIC_KEY"] = (
     .decode()
 )
 
+# The call to users-api is replaced in the tests that need it, but the service
+# still refuses to start without the secret. Kept if the environment has one.
+os.environ.setdefault("INTERNAL_API_TOKEN", "test-internal-token")
+
 
 def issue_token(
     subject: uuid.UUID | None = None,
