@@ -9,10 +9,10 @@ stay in sync with this one by hand.
 
 import uuid
 
-from sqlalchemy import ColumnElement, or_, select
+from sqlalchemy import ColumnElement, and_, not_, or_, select
 from sqlalchemy.orm import InstrumentedAttribute, aliased
 
-from posts_api.infrastructure.database.models import FollowModel
+from posts_api.infrastructure.database.models import BlockModel, FollowModel
 
 
 def visible_to(
@@ -23,7 +23,10 @@ def visible_to(
 ) -> ColumnElement[bool]:
     """Whether the author behind these two columns lets `viewer_id` read their posts.
 
-    Public authors are visible to anyone. A protected author is visible to
+    A block in either direction hides the posts, whatever the visibility: the
+    one who blocked stops seeing the other too, not only the other way around.
+
+    Otherwise, public authors are visible to anyone. A protected author is visible to
     themselves and to whoever they already approved as a follower — the same
     `follows` row `FollowRepository.is_following` checks elsewhere, read here
     with its own `EXISTS` so the caller's query stays a single statement.
@@ -35,10 +38,26 @@ def visible_to(
     tell which one this `EXISTS` means.
     """
     approved_follow = aliased(FollowModel)
-    return or_(
-        author_visibility != "protected",
-        author_id == viewer_id,
-        select(approved_follow.follower_id)
-        .where(approved_follow.follower_id == viewer_id, approved_follow.followee_id == author_id)
-        .exists(),
+    block = aliased(BlockModel)
+    blocked_either_way = (
+        select(block.blocker_id)
+        .where(
+            or_(
+                and_(block.blocker_id == viewer_id, block.blocked_id == author_id),
+                and_(block.blocker_id == author_id, block.blocked_id == viewer_id),
+            )
+        )
+        .exists()
+    )
+    return and_(
+        not_(blocked_either_way),
+        or_(
+            author_visibility != "protected",
+            author_id == viewer_id,
+            select(approved_follow.follower_id)
+            .where(
+                approved_follow.follower_id == viewer_id, approved_follow.followee_id == author_id
+            )
+            .exists(),
+        ),
     )

@@ -122,6 +122,31 @@ class FollowRequestModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class BlockModel(Base):
+    """One account blocking another. The pair is directional: A blocking B says
+    nothing about B blocking A, and both can exist at once."""
+
+    __tablename__ = "blocks"
+    __table_args__ = (
+        CheckConstraint("blocker_id <> blocked_id", name="ck_blocks_not_self"),
+        # Matches the blocked-accounts listing exactly: the owner, then the
+        # cursor's order column and tiebreak.
+        Index("ix_blocks_blocker_cursor", "blocker_id", "created_at", "blocked_id"),
+        # The visibility filter asks "did either of these two block the other"
+        # on every post it reads, from the blocked side too, so that direction
+        # needs its own index and cannot lean on the primary key.
+        Index("ix_blocks_blocked", "blocked_id", "blocker_id"),
+    )
+
+    blocker_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("user_profiles.id"), primary_key=True
+    )
+    blocked_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("user_profiles.id"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class PostModel(Base):
     __tablename__ = "posts"
     __table_args__ = (

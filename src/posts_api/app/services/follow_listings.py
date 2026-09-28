@@ -10,6 +10,7 @@ import uuid
 from posts_api.app.errors import ProblemError
 from posts_api.app.models.follow import Account, FollowListItem, ProfileVisibility, UserProfile
 from posts_api.app.pagination import Cursor
+from posts_api.app.repositories.blocks import BlockRepository
 from posts_api.app.repositories.follow_listings import FollowListingRepository
 from posts_api.app.repositories.follows import FollowRepository
 
@@ -19,9 +20,15 @@ SUGGESTED_ACCOUNTS_LIMIT = 10
 
 
 class FollowListingService:
-    def __init__(self, listings: FollowListingRepository, follows: FollowRepository) -> None:
+    def __init__(
+        self,
+        listings: FollowListingRepository,
+        follows: FollowRepository,
+        blocks: BlockRepository,
+    ) -> None:
         self._listings = listings
         self._follows = follows
+        self._blocks = blocks
 
     async def followers_of(
         self, user_id: uuid.UUID, viewer: Account, *, cursor: str | None = None
@@ -60,7 +67,9 @@ class FollowListingService:
         await self._follows.ensure_profile(viewer)
 
         target = await self._follows.find_profile(user_id)
-        if target is None:
+        # Blocked by that account: answered as if it did not exist, so the
+        # response cannot be read as confirmation of the block.
+        if target is None or await self._blocks.has_blocked(user_id, viewer.id):
             raise ProblemError(
                 status=404,
                 code="user-not-found",

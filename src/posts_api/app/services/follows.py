@@ -9,6 +9,7 @@ import uuid
 
 from posts_api.app.errors import ProblemError
 from posts_api.app.models.follow import Account, FollowRequest
+from posts_api.app.repositories.blocks import BlockRepository
 from posts_api.app.repositories.follow_requests import FollowRequestRepository
 from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.rate_limiter import RateLimiter
@@ -22,6 +23,7 @@ class FollowService:
         self,
         repository: FollowRepository,
         requests: FollowRequestRepository,
+        blocks: BlockRepository,
         rate_limiter: RateLimiter,
         *,
         follow_limit: int,
@@ -29,6 +31,7 @@ class FollowService:
     ) -> None:
         self._repository = repository
         self._requests = requests
+        self._blocks = blocks
         self._rate_limiter = rate_limiter
         self._follow_limit = follow_limit
         self._window_seconds = window_seconds
@@ -64,6 +67,23 @@ class FollowService:
                 code="user-not-found",
                 title="No se pudo seguir la cuenta",
                 detail="La cuenta que querés seguir no existe",
+            )
+
+        # Blocked by that account: the same answer as an account that does not
+        # exist, because a different one would tell the caller they were blocked.
+        if await self._blocks.has_blocked(followee_id, follower_id):
+            raise ProblemError(
+                status=404,
+                code="user-not-found",
+                title="No se pudo seguir la cuenta",
+                detail="La cuenta que querés seguir no existe",
+            )
+        if await self._blocks.has_blocked(follower_id, followee_id):
+            raise ProblemError(
+                status=409,
+                code="account-blocked",
+                title="No se pudo seguir la cuenta",
+                detail="Bloqueaste esta cuenta. Desbloqueala para poder seguirla",
             )
 
         # Checked before the visibility: an account that is already followed and
