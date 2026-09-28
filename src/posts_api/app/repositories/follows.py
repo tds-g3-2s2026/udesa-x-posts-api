@@ -7,7 +7,7 @@ changes, it changes here and nowhere else.
 
 import uuid
 
-from sqlalchemy import delete, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.app.models.follow import Account, ProfileVisibility, UserProfile
@@ -74,6 +74,26 @@ class FollowRepository:
             )
         )
         return result.rowcount > 0
+
+    async def suggested_for(self, viewer_id: uuid.UUID, *, limit: int) -> list[UserProfile]:
+        """The most-followed accounts, for a "who to follow" empty state.
+
+        Excludes the viewer and anyone they already follow: a suggestion that
+        would just show "Siguiendo" again is not a suggestion.
+        """
+        already_followed = select(FollowModel.followee_id).where(
+            FollowModel.follower_id == viewer_id
+        )
+        found = await self._session.execute(
+            select(UserProfileModel)
+            .where(
+                UserProfileModel.id != viewer_id,
+                UserProfileModel.id.not_in(already_followed),
+            )
+            .order_by(UserProfileModel.followers_count.desc(), UserProfileModel.id)
+            .limit(limit)
+        )
+        return [_to_profile(row) for row in found.scalars()]
 
     async def move_counters(
         self, follower_id: uuid.UUID, followee_id: uuid.UUID, *, by: int
