@@ -176,3 +176,37 @@ class PostModel(Base):
     likes_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     retweets_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     replies_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
+class ReportModel(Base):
+    """One account reporting another, optionally from one of its posts."""
+
+    __tablename__ = "reports"
+    __table_args__ = (
+        CheckConstraint(
+            "reason IN ('spam', 'harassment', 'inappropriate_content', 'impersonation')",
+            name="ck_reports_reason",
+        ),
+        CheckConstraint("reporter_id <> target_id", name="ck_reports_not_self"),
+        # The threshold of E3-H5 CA.2 counts the distinct reporters of one
+        # account on every new report. With the target first and the reporter
+        # second, that count is read from the index alone.
+        Index("ix_reports_target_reporter", "target_id", "reporter_id"),
+    )
+
+    # Same reasoning as `PostModel.id`: time-ordered and not guessable.
+    id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()")
+    )
+    reporter_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("user_profiles.id")
+    )
+    target_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("user_profiles.id")
+    )
+    post_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("posts.id"), default=None
+    )
+    # Text plus a CHECK, the same choice `UserProfileModel.visibility` makes.
+    reason: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

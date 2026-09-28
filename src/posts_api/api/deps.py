@@ -12,6 +12,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated
 
+import httpx
 import jwt
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -39,6 +40,14 @@ def get_redis(request: Request) -> Redis:
 
 
 RedisDep = Annotated[Redis, Depends(get_redis)]
+
+
+def get_users_api(request: Request) -> httpx.AsyncClient:
+    """The client for the internal routes of users-api, opened once in the lifespan."""
+    return request.app.state.users_api
+
+
+UsersApiDep = Annotated[httpx.AsyncClient, Depends(get_users_api)]
 
 # Rejects a missing or malformed Authorization header before anything else runs.
 bearer_scheme = HTTPBearer()

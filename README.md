@@ -73,13 +73,16 @@ el despliegue se corta con los pods anteriores sirviendo. La aplicación no real
 migraciones al arrancar. Qué hace paso por paso está en el README de `udesa-x-platform`,
 sección "Despliegue continuo".
 
-`configmap.yaml` define `LOG_LEVEL`, `FOLLOW_RATE_LIMIT`, `FOLLOW_RATE_WINDOW_SECONDS`
-y `JWT_ISSUER` (`users-api`). La API valida estrictamente el issuer al verificar tokens
-recibidos. Copiar `secret.template.yaml` a `secret.yaml`,
+`configmap.yaml` define `LOG_LEVEL`, `FOLLOW_RATE_LIMIT`, `FOLLOW_RATE_WINDOW_SECONDS`,
+`JWT_ISSUER` (`users-api`) y `USERS_API_URL`, la dirección interna de `users-api` a la que se
+avisa que una cuenta pasa a revisión por denuncias (ADR-011). La API valida estrictamente el
+issuer al verificar tokens recibidos. Copiar `secret.template.yaml` a `secret.yaml`,
 ignorado por git, y completar `DATABASE_URL` (con esquema `postgresql+asyncpg://`),
-`REDIS_URL` y `JWT_PUBLIC_KEY` (clave pública Ed25519 en PEM). En el despliegue, el pipeline
-arma el Secret con esos tres GitHub Secrets del repositorio. No aplicar la plantilla vacía ni
-usar `kubectl apply -f k8s/` en un despliegue: incluiría esa plantilla.
+`REDIS_URL`, `JWT_PUBLIC_KEY` (clave pública Ed25519 en PEM) e `INTERNAL_API_TOKEN`, el
+secreto compartido con `users-api` para sus rutas internas, con el mismo valor en los dos
+servicios. En el despliegue, el pipeline arma el Secret con esos cuatro GitHub Secrets del
+repositorio. No aplicar la plantilla vacía ni usar `kubectl apply -f k8s/` en un despliegue:
+incluiría esa plantilla.
 `envFrom` se lee al crear el contenedor: el pipeline pone el hash del ConfigMap y del Secret
 en el pod template, así que un cambio solo de configuración también reemplaza los pods. La
 pública corresponde a la privada estable de users; los tokens antiguos sin `iss` se rechazan.
@@ -126,6 +129,7 @@ uv run alembic upgrade head          # aplicar
 |---|---|
 | `0001_esquema_actual` | `user_profiles`, `follows`, `follow_requests` y `posts` |
 | `0002_bloqueos` | `blocks` |
+| `0003_denuncias` | `reports` |
 
 **Una migración ya aplicada no se edita**: una base que ya la corrió no la vuelve a correr, así
 que el cambio nunca llegaría. Todo cambio de esquema va en una migración nueva.

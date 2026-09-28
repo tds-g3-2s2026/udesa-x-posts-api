@@ -11,6 +11,7 @@ from posts_api.infrastructure.database.models import (
     FollowModel,
     FollowRequestModel,
     PostModel,
+    ReportModel,
     UserProfileModel,
 )
 from posts_api.main import app
@@ -26,6 +27,8 @@ async def api():
     """
     async with app.router.lifespan_context(app):
         async with app.state.session_factory() as session:
+            # First: a report points at the profiles and at the posts.
+            await session.execute(delete(ReportModel))
             await session.execute(delete(BlockModel))
             await session.execute(delete(FollowRequestModel))
             await session.execute(delete(FollowModel))

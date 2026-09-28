@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     jwt_public_key: str
 
     jwt_issuer: str = "users-api"
+
+    # ADR-011: where to ask users-api to put an account under review, and the
+    # secret it checks on that internal route. No default for the secret, the
+    # same as the database: a service that cannot authenticate the call would
+    # only find out when the sixth report arrives.
+    users_api_url: str = "http://users-api"
+    internal_api_token: str
+
     # E3-H1 CA.5: fifty follows per hour. They are settings and not constants
     # so a load test can lower them without touching the code.
     follow_rate_limit: int = 50
