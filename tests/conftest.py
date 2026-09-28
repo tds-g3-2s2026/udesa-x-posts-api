@@ -48,9 +48,11 @@ os.environ["JWT_PUBLIC_KEY"] = (
     .decode()
 )
 
-# The call to users-api is replaced in the tests that need it, but the service
-# still refuses to start without the secret. Kept if the environment has one.
+# The service refuses to start without the secret. Kept if the environment has
+# one. users-api points at a port nothing listens on: the tests that do not
+# replace the call see it refused at once, never a real host.
 os.environ.setdefault("INTERNAL_API_TOKEN", "test-internal-token")
+os.environ.setdefault("USERS_API_URL", "http://127.0.0.1:9")
 
 
 def issue_token(

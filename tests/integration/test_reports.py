@@ -173,3 +173,16 @@ async def test_e3_h5_ca2_counts_reporters_and_not_reports(api, account_review):
     # Eight reports, five reporters: not enough.
     assert await stored_reports_of(target) == 8
     assert account_review.calls == []
+
+
+async def test_reports_are_stored_even_when_users_api_does_not_answer(api):
+    # No `account_review` fixture: the real client, against a users-api that
+    # refuses the connection. ADR-011 keeps the report and retries on the next.
+    target = uuid.uuid4()
+    await given_a_profile(target)
+
+    for _ in range(6):
+        response = await report(api, uuid.uuid4(), userId=str(target), reason="spam")
+        assert response.status_code == 201
+
+    assert await stored_reports_of(target) == 6
