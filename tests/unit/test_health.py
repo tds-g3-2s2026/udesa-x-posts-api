@@ -104,3 +104,17 @@ async def test_livez_reports_200_even_when_dependencies_fail():
 
     assert liveness_resp.status_code == 200
     assert liveness_resp.json() == {"status": "ok"}
+
+
+async def test_healthcheck_reports_the_running_version_even_when_degraded():
+    app = FastAPI(version="1.2.3")
+    app.include_router(router)
+    app.state.engine = FakeEngine(fails=True)
+    app.state.redis = FakeRedis(fails=True)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/healthcheck")
+
+    assert response.status_code == 503
+    assert response.json()["version"] == "1.2.3"
