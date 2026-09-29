@@ -129,6 +129,7 @@ uv run alembic upgrade head          # aplicar
 |---|---|
 | `0001_esquema_actual` | `user_profiles`, `follows`, `follow_requests` y `posts` |
 | `0002_bloqueos` | `blocks` |
+| `0002b_tabla_de_posts` | `posts`, solo si falta: la base de producción aplicó la `0001` antes de que se le sumara esa tabla |
 | `0003_denuncias` | `reports` |
 
 **Una migración ya aplicada no se edita**: una base que ya la corrió no la vuelve a correr, así

@@ -1,7 +1,7 @@
 """Reports between accounts.
 
 Revision ID: 0003_denuncias
-Revises: 0002_bloqueos
+Revises: 0002b_tabla_de_posts
 Create Date: 2026-09-28
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0003_denuncias"
-down_revision: str | None = "0002_bloqueos"
+down_revision: str | None = "0002b_tabla_de_posts"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
