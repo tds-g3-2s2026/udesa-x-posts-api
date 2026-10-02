@@ -174,9 +174,17 @@ async def test_a_garbled_cursor_is_a_400_and_not_a_500(api):
 
 
 async def a_request_from(api, requester: uuid.UUID, target: uuid.UUID) -> str:
-    """Leave a pending request and give back its id, the way the screen gets it."""
+    """Leave a pending request and give back its id, the way the screen gets it.
+
+    Signs in as target with a token that still says "protected": otherwise
+    this same call would correct the stored profile back to public right
+    after creating the request, which a second request from the same
+    requester would then see as no longer needing approval at all.
+    """
     await api.post(f"/users/{target}/follow", headers=signed_in_as(requester))
-    listed = await api.get("/follow-requests", headers=signed_in_as(target))
+    listed = await api.get(
+        "/follow-requests", headers=signed_in_as(target, profile_visibility="protected")
+    )
     return listed.json()["items"][0]["id"]
 
 

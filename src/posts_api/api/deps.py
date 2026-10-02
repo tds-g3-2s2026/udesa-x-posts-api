@@ -20,7 +20,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.app.errors import ProblemError
-from posts_api.app.models.follow import Account
+from posts_api.app.models.follow import Account, ProfileVisibility
 from posts_api.app.security import decode_access_token
 from posts_api.infrastructure.database.session import session_scope
 
@@ -76,10 +76,20 @@ def get_current_user(request: Request, credentials: BearerDep) -> Account:
             detail="El token no es válido",
         ) from exc
 
-    # The handle is read with `get` and not indexed: a token minted before
-    # users-api started sending it stays valid until it expires, and rejecting
-    # it would log everyone out on deploy.
-    return Account(id=uuid.UUID(claims["sub"]), handle=claims.get("handle"))
+    # The handle and the visibility are both read with `get` and not indexed:
+    # a token minted before users-api started sending either one stays valid
+    # until it expires, and rejecting it would log everyone out on deploy.
+    raw_visibility = claims.get("profile_visibility")
+    try:
+        profile_visibility = ProfileVisibility(raw_visibility) if raw_visibility else None
+    except ValueError:
+        profile_visibility = None
+
+    return Account(
+        id=uuid.UUID(claims["sub"]),
+        handle=claims.get("handle"),
+        profile_visibility=profile_visibility,
+    )
 
 
 CurrentUserDep = Annotated[Account, Depends(get_current_user)]

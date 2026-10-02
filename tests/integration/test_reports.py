@@ -113,7 +113,11 @@ async def test_an_account_that_does_not_exist_cannot_be_reported(api, account_re
 async def test_a_post_the_reporter_cannot_see_cannot_be_reported(api, account_review):
     reporter, author = uuid.uuid4(), uuid.uuid4()
     await given_a_profile(author, visibility="protected")
-    created = await api.post("/posts", json={"content": "hola"}, headers=signed_in_as(author))
+    created = await api.post(
+        "/posts",
+        json={"content": "hola"},
+        headers=signed_in_as(author, profile_visibility="protected"),
+    )
 
     response = await report(api, reporter, postId=created.json()["id"], reason="spam")
 
