@@ -13,3 +13,5 @@ data:
   # asyncpg con ssl=verify-full busca ~/.postgresql/root.crt, no el almacén del
   # sistema: sin esta ruta la conexión a Neon falla antes de abrirse.
   PGSSLROOTCERT: "/etc/ssl/certs/ca-certificates.crt"
+  # Logs y trazas a Grafana Cloud. El token va en el Secret.
+  OTEL_EXPORTER_OTLP_ENDPOINT: "https://otlp-gateway-prod-sa-east-1.grafana.net/otlp"

@@ -37,6 +37,10 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    # Telemetry leaves the pod only when this is set. The exporters read it, and
+    # the rest of the OTEL_EXPORTER_OTLP_* variables, on their own.
+    otel_exporter_otlp_endpoint: str | None = None
+
 
 # Every endpoint reachable from outside hangs under this prefix: the cluster has
 # a single Ingress for the whole system and routes by path, and `users-api` and

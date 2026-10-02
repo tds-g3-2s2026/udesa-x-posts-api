@@ -4,6 +4,9 @@ from importlib.metadata import version
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
+from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -19,6 +22,7 @@ from posts_api.app.errors import ProblemError
 from posts_api.app.security import load_public_key
 from posts_api.config.settings import API_PREFIX, get_settings
 from posts_api.infrastructure.database.session import build_session_factory
+from posts_api.infrastructure.telemetry import export, instrument
 from posts_api.infrastructure.users_api.account_review import build_users_api_client
 
 
@@ -33,6 +37,8 @@ async def lifespan(app: FastAPI):
         format="%(asctime)s %(levelname)-8s %(name)s | %(message)s",
         force=True,
     )
+    if settings.otel_exporter_otlp_endpoint:
+        export(tracer_provider, OTLPSpanExporter(), OTLPLogExporter())
 
     # Connections are opened once and shared. Creating an engine per request
     # exhausts the PostgreSQL pool as soon as there is any load.
@@ -44,6 +50,8 @@ async def lifespan(app: FastAPI):
     app.state.users_api = build_users_api_client(
         settings.users_api_url, settings.internal_api_token
     )
+    # Its calls carry the request's trace, so users-api joins it.
+    HTTPXClientInstrumentor.instrument_client(app.state.users_api, tracer_provider=tracer_provider)
 
     yield
 
@@ -53,6 +61,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="UdeSA-X Posts API", version=version("posts-api"), lifespan=lifespan)
+
+tracer_provider = instrument(app)
 
 app.add_exception_handler(ProblemError, problem_error_handler)
 app.add_exception_handler(RequestValidationError, validation_error_handler)
