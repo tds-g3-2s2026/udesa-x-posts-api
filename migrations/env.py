@@ -14,7 +14,9 @@ from posts_api.infrastructure.database.session import Base
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # The tests run the migrations inside their own process, where disabling the
+    # loggers that already exist would silence the service's own.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 
