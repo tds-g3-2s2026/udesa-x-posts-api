@@ -6,6 +6,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from posts_api.api.deps import get_current_user
 from posts_api.app.errors import ProblemError
+from posts_api.app.models.follow import ProfileVisibility
 from posts_api.app.security import load_public_key
 from tests.conftest import issue_token
 
@@ -40,6 +41,40 @@ def test_a_token_without_a_handle_still_authenticates():
 
     assert resolved.id == subject
     assert resolved.handle is None
+
+
+def test_a_token_carrying_protected_resolves_to_that_visibility():
+    subject = uuid.uuid4()
+
+    resolved = get_current_user(
+        fake_request(), bearer(issue_token(subject, profile_visibility="protected"))
+    )
+
+    assert resolved.profile_visibility is ProfileVisibility.PROTECTED
+
+
+def test_a_token_without_a_visibility_claim_still_authenticates():
+    """Same reasoning as the handle: tokens minted before this existed stay valid."""
+    subject = uuid.uuid4()
+
+    resolved = get_current_user(
+        fake_request(), bearer(issue_token(subject, profile_visibility=None))
+    )
+
+    assert resolved.id == subject
+    assert resolved.profile_visibility is None
+
+
+def test_a_token_with_a_nonsense_visibility_value_is_ignored_rather_than_rejected():
+    """A client should never get logged out over a field it does not read."""
+    subject = uuid.uuid4()
+
+    resolved = get_current_user(
+        fake_request(), bearer(issue_token(subject, profile_visibility="not-a-real-value"))
+    )
+
+    assert resolved.id == subject
+    assert resolved.profile_visibility is None
 
 
 def test_a_tampered_token_is_answered_with_401():

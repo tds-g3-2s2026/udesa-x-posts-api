@@ -38,22 +38,38 @@ class FollowRepository:
     async def ensure_profile(self, account: Account) -> UserProfile:
         """The profile of whoever is signed in, created the first time they appear.
 
-        No copy of the accounts arrives from users-api yet, so the first
-        authenticated request a user makes is what puts them on the graph, with
-        the handle the token carries.
+        No event arrives from users-api yet, so every authenticated request
+        carrying a fresher token than what is stored is what keeps this copy
+        from drifting: the token is at most 15 minutes old, which is the gap
+        until an event replaces this.
 
-        An existing profile only gets its handle filled in when it is missing:
-        a handle is fixed at registration and users-api refuses to change it, so
-        a stored one can never be out of date, and overwriting it would only
-        risk clashing with the unique index for nothing.
+        The handle only ever gets filled in once, not kept in sync: a handle
+        is fixed at registration and users-api refuses to change it, so a
+        stored one can never be out of date. Visibility is the opposite — it
+        can change at any time — so it is written back whenever the token
+        disagrees with what is stored, not only the first time.
         """
         row = await self._session.get(UserProfileModel, account.id)
         if row is None:
-            row = UserProfileModel(id=account.id, handle=account.handle)
+            visibility = account.profile_visibility or ProfileVisibility.PUBLIC
+            row = UserProfileModel(
+                id=account.id, handle=account.handle, visibility=visibility.value
+            )
             self._session.add(row)
             await self._session.flush()
-        elif row.handle is None and account.handle is not None:
+            return _to_profile(row)
+
+        changed = False
+        if row.handle is None and account.handle is not None:
             row.handle = account.handle
+            changed = True
+        if (
+            account.profile_visibility is not None
+            and row.visibility != account.profile_visibility.value
+        ):
+            row.visibility = account.profile_visibility.value
+            changed = True
+        if changed:
             await self._session.flush()
         return _to_profile(row)
 
