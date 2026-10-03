@@ -47,6 +47,7 @@ async def lifespan(app: FastAPI):
     app.state.engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     app.state.session_factory = build_session_factory(app.state.engine)
     app.state.redis = Redis.from_url(settings.redis_url)
+    app.state.auth_redis = Redis.from_url(settings.auth_redis_url)
     app.state.jwt_public_key = load_public_key(settings.jwt_public_key)
     app.state.users_api = build_users_api_client(
         settings.users_api_url, settings.internal_api_token
@@ -58,6 +59,7 @@ async def lifespan(app: FastAPI):
 
     await app.state.engine.dispose()
     await app.state.redis.aclose()
+    await app.state.auth_redis.aclose()
     await app.state.users_api.aclose()
 
 

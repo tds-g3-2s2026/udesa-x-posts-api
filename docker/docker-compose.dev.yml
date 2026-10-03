@@ -10,6 +10,10 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://posts:posts@postgres:5432/posts
       REDIS_URL: redis://redis:6379/0
+      # ADR-014: where users-api writes the revocation marks, database /0 of the
+      # Redis in the cluster. This compose has no users-api, so nothing writes
+      # marks here and no token is ever revoked.
+      AUTH_REDIS_URL: redis://redis:6379/0
       # Development only, and only the public half: it lets the service start.
       # To try a protected endpoint, run scripts/dev_token.py and
       # replace this with the key it prints, using the token it gives you.
@@ -41,6 +45,9 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://posts:posts@postgres:5432/posts
       REDIS_URL: redis://redis:6379/0
+      # Another database from REDIS_URL: the tests flush that one before each
+      # test, and that must not take with it the marks a test just wrote.
+      AUTH_REDIS_URL: redis://redis:6379/2
     depends_on:
       postgres:
         condition: service_healthy
