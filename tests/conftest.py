@@ -72,6 +72,7 @@ def issue_token(
     subject: uuid.UUID | None = None,
     *,
     issuer: str = "users-api",
+    role: str = "user",
     handle: str | None = "@alumno_01",
     profile_visibility: str | None = "public",
     expires_in_minutes: int = 15,
@@ -88,7 +89,7 @@ def issue_token(
         {
             "iss": issuer,
             "sub": str(subject or uuid.uuid4()),
-            "role": "user",
+            "role": role,
             "handle": handle,
             "profile_visibility": profile_visibility,
             "jti": jti or str(uuid.uuid4()),

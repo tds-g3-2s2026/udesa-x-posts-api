@@ -68,10 +68,8 @@ bearer_scheme = HTTPBearer()
 BearerDep = Annotated[HTTPAuthorizationCredentials, Depends(bearer_scheme)]
 
 
-async def get_current_user(
-    request: Request, credentials: BearerDep, revocations: RevocationsDep
-) -> Account:
-    """The account behind the bearer token.
+async def get_claims(request: Request, credentials: BearerDep, revocations: RevocationsDep) -> dict:
+    """The claims of the bearer token.
 
     Signature, expiry and issuer are checked locally. Revocation is not: a
     logout, a password change or an account put under review is written by
@@ -114,7 +112,15 @@ async def get_current_user(
             title="La sesión ya no es válida",
             detail="Tu sesión se cerró. Iniciá sesión de nuevo",
         )
+    return claims
 
+
+ClaimsDep = Annotated[dict, Depends(get_claims)]
+
+
+def get_current_user(claims: ClaimsDep) -> Account:
+    """The account behind the bearer token."""
+    user_id = uuid.UUID(claims["sub"])
     # The handle and the visibility are both read with `get` and not indexed:
     # a token minted before users-api started sending either one stays valid
     # until it expires, and rejecting it would log everyone out on deploy.
@@ -132,3 +138,21 @@ async def get_current_user(
 
 
 CurrentUserDep = Annotated[Account, Depends(get_current_user)]
+
+# The roles users-api hands to backoffice accounts.
+ADMINISTRATOR_ROLES = frozenset({"moderator", "superadmin"})
+
+
+def require_administrator(claims: ClaimsDep) -> None:
+    """Refuse anything but a backoffice token, with 403: the session is valid,
+    the permission is missing."""
+    if claims.get("role") not in ADMINISTRATOR_ROLES:
+        raise ProblemError(
+            status=403,
+            code="administrator-required",
+            title="No se pudo completar la acción",
+            detail="Solo un administrador puede ver esta información",
+        )
+
+
+AdministratorDep = Annotated[None, Depends(require_administrator)]
