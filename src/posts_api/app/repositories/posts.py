@@ -6,8 +6,9 @@ same separation `follows` keeps between its repository and its storage model.
 """
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.app.models.post import Post, PostWithAuthor
@@ -39,6 +40,11 @@ class PostRepository:
         await self._session.flush()
         await self._session.refresh(row)
         return _to_post(row)
+
+    async def count_created_since(self, since: datetime) -> int:
+        return await self._session.scalar(
+            select(func.count()).select_from(PostModel).where(PostModel.created_at >= since)
+        )
 
     async def find_visible(
         self, post_id: uuid.UUID, *, viewer_id: uuid.UUID

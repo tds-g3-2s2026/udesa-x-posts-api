@@ -54,8 +54,8 @@ bearer_scheme = HTTPBearer()
 BearerDep = Annotated[HTTPAuthorizationCredentials, Depends(bearer_scheme)]
 
 
-def get_current_user(request: Request, credentials: BearerDep) -> Account:
-    """The account behind the bearer token.
+def get_claims(request: Request, credentials: BearerDep) -> dict:
+    """The claims of the bearer token.
 
     Signature, expiry and issuer are checked locally. Revocation is recorded in
     the Redis of users-api, which posts-api does not share, so a token closed by
@@ -63,7 +63,7 @@ def get_current_user(request: Request, credentials: BearerDep) -> Account:
     most. Narrowing that window needs the revocation events from the queue.
     """
     try:
-        claims = decode_access_token(
+        return decode_access_token(
             request.app.state.jwt_public_key,
             credentials.credentials,
             issuer=request.app.state.settings.jwt_issuer,
@@ -76,6 +76,12 @@ def get_current_user(request: Request, credentials: BearerDep) -> Account:
             detail="El token no es válido",
         ) from exc
 
+
+ClaimsDep = Annotated[dict, Depends(get_claims)]
+
+
+def get_current_user(claims: ClaimsDep) -> Account:
+    """The account behind the bearer token."""
     # The handle and the visibility are both read with `get` and not indexed:
     # a token minted before users-api started sending either one stays valid
     # until it expires, and rejecting it would log everyone out on deploy.
@@ -93,3 +99,21 @@ def get_current_user(request: Request, credentials: BearerDep) -> Account:
 
 
 CurrentUserDep = Annotated[Account, Depends(get_current_user)]
+
+# The roles users-api hands to backoffice accounts.
+ADMINISTRATOR_ROLES = frozenset({"moderator", "superadmin"})
+
+
+def require_administrator(claims: ClaimsDep) -> None:
+    """Refuse anything but a backoffice token, with 403: the session is valid,
+    the permission is missing."""
+    if claims.get("role") not in ADMINISTRATOR_ROLES:
+        raise ProblemError(
+            status=403,
+            code="administrator-required",
+            title="No se pudo completar la acción",
+            detail="Solo un administrador puede ver esta información",
+        )
+
+
+AdministratorDep = Annotated[None, Depends(require_administrator)]

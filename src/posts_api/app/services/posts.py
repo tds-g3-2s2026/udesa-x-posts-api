@@ -7,6 +7,7 @@ rules can be read, tested and defended without starting the application.
 
 import re
 import uuid
+from datetime import datetime
 
 from posts_api.app.errors import ProblemError
 from posts_api.app.models.follow import Account
@@ -98,6 +99,10 @@ class PostService:
                 detail="El post no existe",
             )
         return post
+
+    async def count_published_since(self, since: datetime) -> int:
+        """How many posts were published from `since` on, for the backoffice."""
+        return await self._posts.count_created_since(since)
 
     async def _charge_the_rate_limit(self, author_id: uuid.UUID) -> None:
         """Count the attempt before anything else runs.

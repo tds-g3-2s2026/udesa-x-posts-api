@@ -10,6 +10,7 @@ from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from posts_api.api.admin_posts import router as admin_posts_router
 from posts_api.api.blocks import router as blocks_router
 from posts_api.api.errors import problem_error_handler, validation_error_handler
 from posts_api.api.feed import router as feed_router
@@ -76,3 +77,4 @@ app.include_router(posts_router, prefix=API_PREFIX)
 app.include_router(feed_router, prefix=API_PREFIX)
 app.include_router(blocks_router, prefix=API_PREFIX)
 app.include_router(reports_router, prefix=API_PREFIX)
+app.include_router(admin_posts_router, prefix=API_PREFIX)
