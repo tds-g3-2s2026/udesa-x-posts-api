@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -53,6 +54,18 @@ os.environ["JWT_PUBLIC_KEY"] = (
 # replace the call see it refused at once, never a real host.
 os.environ.setdefault("INTERNAL_API_TOKEN", "test-internal-token")
 os.environ.setdefault("USERS_API_URL", "http://127.0.0.1:9")
+
+# The revocation marks live in users-api's Redis. In the suite that is the same
+# server REDIS_URL names, on a database of its own (2, as in
+# docker/docker-compose.dev.yml), so the marks a test writes never mix with the
+# cache. Kept if the environment has one. With no Redis it points at a port
+# nothing listens on, like users-api above.
+os.environ.setdefault(
+    "AUTH_REDIS_URL",
+    re.sub(r"/\d*$", "", os.environ["REDIS_URL"]) + "/2"
+    if os.getenv("REDIS_URL")
+    else "redis://127.0.0.1:9/2",
+)
 
 
 def issue_token(
