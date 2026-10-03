@@ -32,3 +32,7 @@ class PostSummary(BaseModel):
             retweets_count=post.retweets_count,
             replies_count=post.replies_count,
         )
+
+
+class PostMetrics(BaseModel):
+    published: int
