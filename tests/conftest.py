@@ -75,8 +75,14 @@ def issue_token(
     handle: str | None = "@alumno_01",
     profile_visibility: str | None = "public",
     expires_in_minutes: int = 15,
+    jti: str | None = None,
+    issued_at: datetime | None = None,
 ) -> str:
-    """A token of the same shape users-api issues, signed with the test key."""
+    """A token of the same shape users-api issues, signed with the test key.
+
+    `issued_at` moves `iat` into the past, to line a token up against a
+    revocation cutoff. It does not move `exp`, which counts from now.
+    """
     now = datetime.now(UTC)
     return jwt.encode(
         {
@@ -85,8 +91,8 @@ def issue_token(
             "role": "user",
             "handle": handle,
             "profile_visibility": profile_visibility,
-            "jti": str(uuid.uuid4()),
-            "iat": now,
+            "jti": jti or str(uuid.uuid4()),
+            "iat": issued_at or now,
             "exp": now + timedelta(minutes=expires_in_minutes),
         },
         TEST_PRIVATE_KEY,
