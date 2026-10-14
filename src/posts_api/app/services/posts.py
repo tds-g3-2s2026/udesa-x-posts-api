@@ -1,4 +1,4 @@
-"""The rules of publishing a post.
+"""The rules of publishing a post, and of reading one and its replies.
 
 No FastAPI and no SQLAlchemy here on purpose, the same shape `FollowService`
 uses: the service receives its repositories and raises `ProblemError`, so the
@@ -12,6 +12,7 @@ from datetime import datetime
 from posts_api.app.errors import ProblemError
 from posts_api.app.models.follow import Account
 from posts_api.app.models.post import Post, PostWithAuthor
+from posts_api.app.pagination import Cursor
 from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.posts import PostRepository
 from posts_api.app.repositories.rate_limiter import RateLimiter
@@ -55,8 +56,15 @@ class PostService:
         self._post_limit = post_limit
         self._window_seconds = window_seconds
 
-    async def create(self, author: Account, content: str) -> Post:
-        """Publish a post, or refuse it and say exactly which rule stopped it."""
+    async def create(
+        self, author: Account, content: str, *, parent_id: uuid.UUID | None = None
+    ) -> Post:
+        """Publish a post, or refuse it and say exactly which rule stopped it.
+
+        A reply goes through the same checks as any post, and through the same
+        rate limit counter: answering is publishing, and a second counter would
+        let somebody double their quota by alternating the two.
+        """
         await self._charge_the_rate_limit(author.id)
         await self._follows.ensure_profile(author)
 
@@ -80,7 +88,16 @@ class PostService:
                 detail=f"El post no puede superar los {MAX_CONTENT_LENGTH} caracteres",
             )
 
-        return await self._posts.create(author.id, sanitized)
+        if parent_id is None:
+            return await self._posts.create(author.id, sanitized)
+
+        # The parent is looked up as the author, with the visibility rule on:
+        # one they cannot read is answered exactly like one that does not exist.
+        await self._visible_post(parent_id, author.id)
+        reply = await self._posts.create(author.id, sanitized, parent_id=parent_id)
+        # Same transaction as the insert: either both land or neither does.
+        await self._posts.count_reply(parent_id)
+        return reply
 
     async def get(self, post_id: uuid.UUID, viewer: Account) -> PostWithAuthor:
         """A single post, or `404` if it does not exist or the viewer cannot see it.
@@ -90,7 +107,22 @@ class PostService:
         would confirm that a protected account's post exists, which is exactly
         what the visibility rule exists to keep from leaking.
         """
-        post = await self._posts.find_visible(post_id, viewer_id=viewer.id)
+        return await self._visible_post(post_id, viewer.id)
+
+    async def replies_to(
+        self, post_id: uuid.UUID, viewer: Account, *, cursor: str | None = None
+    ) -> tuple[list[PostWithAuthor], str | None]:
+        """The replies to a post, or the same `404` as the post itself.
+
+        The parent is checked first: listing the replies of a post the viewer
+        cannot read would otherwise be a way to find out that it exists.
+        """
+        await self._visible_post(post_id, viewer.id)
+        decoded = Cursor.decode(cursor) if cursor is not None else None
+        return await self._posts.replies_to(post_id, viewer_id=viewer.id, cursor=decoded)
+
+    async def _visible_post(self, post_id: uuid.UUID, viewer_id: uuid.UUID) -> PostWithAuthor:
+        post = await self._posts.find_visible(post_id, viewer_id=viewer_id)
         if post is None:
             raise ProblemError(
                 status=404,

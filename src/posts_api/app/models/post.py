@@ -25,6 +25,7 @@ class Post:
     likes_count: int = 0
     retweets_count: int = 0
     replies_count: int = 0
+    parent_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -45,3 +46,4 @@ class PostWithAuthor:
     likes_count: int
     retweets_count: int
     replies_count: int
+    parent_id: uuid.UUID | None = None
