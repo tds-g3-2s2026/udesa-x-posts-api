@@ -67,8 +67,14 @@ def apply_cursor(
     tiebreak_by: ColumnElement,
     cursor: Cursor | None,
     limit: int = DEFAULT_PAGE_SIZE,
+    ascending: bool = False,
 ) -> Select:
     """Add the keyset `WHERE`, the stable `ORDER BY` and the `LIMIT` a page needs.
+
+    Newest first unless `ascending` is set: a conversation reads from its
+    oldest message down, and everything else in the service reads the other
+    way. The comparison flips with the order, so "after the cursor" always
+    means "further along in the direction the listing is walked".
 
     One row past the page is asked for on purpose: getting `limit + 1` rows
     back is what tells `page_of` whether there is a next page, without a
@@ -78,9 +84,11 @@ def apply_cursor(
         # A row-value comparison, not two conditions stitched with OR: it reads
         # the same way the composite index does, so the planner can walk it
         # instead of falling back to a filter.
-        statement = statement.where(
-            tuple_(order_by, tiebreak_by) < tuple_(cursor.at, cursor.tiebreak)
-        )
+        position = tuple_(order_by, tiebreak_by)
+        after = tuple_(cursor.at, cursor.tiebreak)
+        statement = statement.where(position > after if ascending else position < after)
+    if ascending:
+        return statement.order_by(order_by.asc(), tiebreak_by.asc()).limit(limit + 1)
     return statement.order_by(order_by.desc(), tiebreak_by.desc()).limit(limit + 1)
 
 
