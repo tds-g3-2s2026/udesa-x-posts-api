@@ -41,6 +41,9 @@ class FeedRepository:
             .join(FollowModel, FollowModel.followee_id == PostModel.author_id)
             .where(
                 FollowModel.follower_id == viewer_id,
+                # Replies live in the same table but are read from the post they
+                # answer, not from the timeline.
+                PostModel.parent_id.is_(None),
                 visible_to(
                     viewer_id,
                     author_id=PostModel.author_id,
@@ -66,6 +69,7 @@ class FeedRepository:
                 likes_count=post.likes_count,
                 retweets_count=post.retweets_count,
                 replies_count=post.replies_count,
+                parent_id=post.parent_id,
             )
             for post, handle in found.all()
         ]

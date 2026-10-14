@@ -20,6 +20,7 @@ class PostSummary(BaseModel):
     likes_count: int = Field(serialization_alias="likesCount")
     retweets_count: int = Field(serialization_alias="retweetsCount")
     replies_count: int = Field(serialization_alias="repliesCount")
+    parent_id: uuid.UUID | None = Field(default=None, serialization_alias="parentId")
 
     @classmethod
     def of(cls, post: Post) -> "PostSummary":
@@ -31,6 +32,7 @@ class PostSummary(BaseModel):
             likes_count=post.likes_count,
             retweets_count=post.retweets_count,
             replies_count=post.replies_count,
+            parent_id=post.parent_id,
         )
 
 
