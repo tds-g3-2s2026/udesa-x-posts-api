@@ -40,6 +40,21 @@ def _strip_tags(content: str) -> str:
     return _TAG.sub("", content)
 
 
+def post_not_found() -> ProblemError:
+    """The `404` for a post that does not exist and for one the viewer cannot read.
+
+    One function so every endpoint that looks a post up answers with exactly the
+    same body: a difference between two of them would tell a caller which posts
+    exist behind a block or a protected account.
+    """
+    return ProblemError(
+        status=404,
+        code="post-not-found",
+        title="No se pudo obtener el post",
+        detail="El post no existe",
+    )
+
+
 class PostService:
     def __init__(
         self,
@@ -124,12 +139,7 @@ class PostService:
     async def _visible_post(self, post_id: uuid.UUID, viewer_id: uuid.UUID) -> PostWithAuthor:
         post = await self._posts.find_visible(post_id, viewer_id=viewer_id)
         if post is None:
-            raise ProblemError(
-                status=404,
-                code="post-not-found",
-                title="No se pudo obtener el post",
-                detail="El post no existe",
-            )
+            raise post_not_found()
         return post
 
     async def count_published_since(self, since: datetime) -> int:

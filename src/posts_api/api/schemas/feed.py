@@ -29,6 +29,7 @@ class FeedPostSummary(BaseModel):
     replies_count: int = Field(serialization_alias="repliesCount")
     # The post this one answers, `null` for one that answers nothing.
     parent_id: uuid.UUID | None = Field(default=None, serialization_alias="parentId")
+    liked_by_me: bool = Field(default=False, serialization_alias="likedByMe")
 
     @classmethod
     def of(cls, post: PostWithAuthor) -> "FeedPostSummary":
@@ -42,4 +43,5 @@ class FeedPostSummary(BaseModel):
             retweets_count=post.retweets_count,
             replies_count=post.replies_count,
             parent_id=post.parent_id,
+            liked_by_me=post.liked_by_me,
         )

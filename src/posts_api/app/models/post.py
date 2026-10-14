@@ -47,3 +47,6 @@ class PostWithAuthor:
     retweets_count: int
     replies_count: int
     parent_id: uuid.UUID | None = None
+    # Whether whoever is reading already liked it: a fact about the reader, not
+    # about the post, so it is filled in by the query that reads it.
+    liked_by_me: bool = False

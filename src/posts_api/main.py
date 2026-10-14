@@ -17,6 +17,7 @@ from posts_api.api.feed import router as feed_router
 from posts_api.api.follow_requests import router as follow_requests_router
 from posts_api.api.follows import router as follows_router
 from posts_api.api.health import router as health_router
+from posts_api.api.likes import router as likes_router
 from posts_api.api.posts import router as posts_router
 from posts_api.api.reports import router as reports_router
 from posts_api.app.errors import ProblemError
@@ -76,6 +77,7 @@ app.include_router(health_router)
 app.include_router(follows_router, prefix=API_PREFIX)
 app.include_router(follow_requests_router, prefix=API_PREFIX)
 app.include_router(posts_router, prefix=API_PREFIX)
+app.include_router(likes_router, prefix=API_PREFIX)
 app.include_router(feed_router, prefix=API_PREFIX)
 app.include_router(blocks_router, prefix=API_PREFIX)
 app.include_router(reports_router, prefix=API_PREFIX)
