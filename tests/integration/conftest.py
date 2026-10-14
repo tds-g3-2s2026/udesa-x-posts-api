@@ -10,6 +10,7 @@ from posts_api.infrastructure.database.models import (
     BlockModel,
     FollowModel,
     FollowRequestModel,
+    LikeModel,
     PostModel,
     ReportModel,
     UserProfileModel,
@@ -29,6 +30,7 @@ async def api():
         async with app.state.session_factory() as session:
             # First: a report points at the profiles and at the posts.
             await session.execute(delete(ReportModel))
+            await session.execute(delete(LikeModel))
             await session.execute(delete(BlockModel))
             await session.execute(delete(FollowRequestModel))
             await session.execute(delete(FollowModel))

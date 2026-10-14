@@ -225,3 +225,18 @@ class ReportModel(Base):
     # Text plus a CHECK, the same choice `UserProfileModel.visibility` makes.
     reason: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LikeModel(Base):
+    """One account liking one post. The pair is the identity of the row, so a
+    second like from the same account cannot exist."""
+
+    __tablename__ = "likes"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("user_profiles.id"), primary_key=True
+    )
+    post_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("posts.id"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
