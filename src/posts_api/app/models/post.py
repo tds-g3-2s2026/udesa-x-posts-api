@@ -50,3 +50,7 @@ class PostWithAuthor:
     # Whether whoever is reading already liked it: a fact about the reader, not
     # about the post, so it is filled in by the query that reads it.
     liked_by_me: bool = False
+    retweeted_by_me: bool = False
+    retweeted_by: str | None = None
+    retweeter_id: uuid.UUID | None = None
+    activity_at: datetime | None = None
