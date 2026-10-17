@@ -285,6 +285,7 @@ async def test_a_reply_listed_carries_the_shape_of_a_feed_row(api):
         "authorDisplayName",
         "authorAvatarUrl",
         "content",
+        "deleted",
         "createdAt",
         "likesCount",
         "retweetsCount",

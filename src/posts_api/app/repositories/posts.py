@@ -39,14 +39,15 @@ def _to_post_with_author(
         id=post.id,
         author_id=post.author_id,
         author_handle=handle,
-        content=post.content,
+        content=None if post.deleted_at else post.content,
+        deleted=post.deleted_at is not None,
         created_at=post.created_at,
-        likes_count=post.likes_count,
-        retweets_count=post.retweets_count,
+        likes_count=0 if post.deleted_at else post.likes_count,
+        retweets_count=0 if post.deleted_at else post.retweets_count,
         replies_count=post.replies_count,
         parent_id=post.parent_id,
-        liked_by_me=liked,
-        retweeted_by_me=retweeted,
+        liked_by_me=liked and post.deleted_at is None,
+        retweeted_by_me=retweeted and post.deleted_at is None,
     )
 
 
@@ -71,7 +72,7 @@ class PostRepository:
         )
 
     async def find_visible(
-        self, post_id: uuid.UUID, *, viewer_id: uuid.UUID
+        self, post_id: uuid.UUID, *, viewer_id: uuid.UUID, include_deleted: bool = False
     ) -> PostWithAuthor | None:
         """The post, only if `viewer_id` is allowed to read its author's posts.
 
@@ -85,6 +86,7 @@ class PostRepository:
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
             .where(
                 PostModel.id == post_id,
+                True if include_deleted else PostModel.deleted_at.is_(None),
                 visible_to(
                     viewer_id,
                     author_id=PostModel.author_id,
@@ -97,6 +99,22 @@ class PostRepository:
             return None
         post, handle, liked, retweeted = row
         return _to_post_with_author(post, handle, liked, retweeted)
+
+    async def lock_visible(
+        self, post_id: uuid.UUID, *, viewer_id: uuid.UUID
+    ) -> PostWithAuthor | None:
+        """Lock the post before checking its current state or changing its relations."""
+        await self._session.execute(
+            select(PostModel.id).where(PostModel.id == post_id).with_for_update()
+        )
+        return await self.find_visible(post_id, viewer_id=viewer_id, include_deleted=True)
+
+    async def mark_deleted(self, post_id: uuid.UUID) -> None:
+        await self._session.execute(
+            update(PostModel)
+            .where(PostModel.id == post_id, PostModel.deleted_at.is_(None))
+            .values(deleted_at=func.clock_timestamp(), likes_count=0, retweets_count=0)
+        )
 
     async def count_reply(self, post_id: uuid.UUID) -> None:
         """Add one to the replies counter of the post that was just answered.
