@@ -29,6 +29,7 @@ class FakeUsersApi:
         self.tokens: list[str | None] = []
         self.down = False
         self.without_the_route = False
+        self.behind_a_proxy = False
 
     def has(self, user_id: uuid.UUID, *, display_name=None, bio=None) -> None:
         self.accounts[user_id] = {
@@ -46,6 +47,9 @@ class FakeUsersApi:
         if self.without_the_route:
             # What FastAPI answers for a path it does not know.
             return httpx.Response(404, json={"detail": "Not Found"})
+        if self.behind_a_proxy:
+            # A 404 written by something in front of users-api, not as JSON.
+            return httpx.Response(404, text="<html>Not Found</html>")
         user_id = uuid.UUID(request.url.path.split("/")[3])
         if user_id not in self.accounts:
             return httpx.Response(
@@ -167,6 +171,17 @@ async def test_a_users_api_without_the_route_does_not_hide_the_profile(api, user
     owner = uuid.uuid4()
     await given_a_profile(owner)
     users_api.without_the_route = True
+
+    response = await api.get(f"/users/{owner}", headers=signed_in_as(uuid.uuid4()))
+
+    assert response.status_code == 200
+    assert response.json()["displayName"] is None
+
+
+async def test_a_404_that_is_not_json_does_not_hide_the_profile(api, users_api):
+    owner = uuid.uuid4()
+    await given_a_profile(owner)
+    users_api.behind_a_proxy = True
 
     response = await api.get(f"/users/{owner}", headers=signed_in_as(uuid.uuid4()))
 
