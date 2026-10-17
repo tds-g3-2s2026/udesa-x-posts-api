@@ -56,6 +56,9 @@ class RetweetRepository:
         )
         return result.rowcount > 0
 
+    async def remove_for_post(self, post_id: uuid.UUID) -> None:
+        await self._session.execute(delete(RetweetModel).where(RetweetModel.post_id == post_id))
+
     async def move_counter(self, post_id: uuid.UUID, *, by: int) -> None:
         """Add `by` to the retweets of the post.
 

@@ -38,5 +38,6 @@ class RetweetService:
 
     async def _readable(self, post_id: uuid.UUID, viewer_id: uuid.UUID) -> None:
         """Unreadable and missing posts produce the same response."""
-        if await self._posts.find_visible(post_id, viewer_id=viewer_id) is None:
+        post = await self._posts.lock_visible(post_id, viewer_id=viewer_id)
+        if post is None or post.deleted:
             raise post_not_found()

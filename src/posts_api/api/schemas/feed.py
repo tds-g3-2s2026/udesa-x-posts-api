@@ -22,7 +22,8 @@ class FeedPostSummary(BaseModel):
     # not missing, so the screen can read the final shape today.
     author_display_name: str | None = Field(default=None, serialization_alias="authorDisplayName")
     author_avatar_url: str | None = Field(default=None, serialization_alias="authorAvatarUrl")
-    content: str
+    content: str | None
+    deleted: bool
     created_at: datetime = Field(serialization_alias="createdAt")
     likes_count: int = Field(serialization_alias="likesCount")
     retweets_count: int = Field(serialization_alias="retweetsCount")
@@ -49,6 +50,7 @@ class FeedPostSummary(BaseModel):
             author_id=post.author_id,
             author_handle=post.author_handle,
             content=post.content,
+            deleted=post.deleted,
             created_at=post.created_at,
             likes_count=post.likes_count,
             retweets_count=post.retweets_count,

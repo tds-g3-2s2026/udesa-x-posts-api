@@ -54,6 +54,9 @@ class LikeRepository:
         )
         return result.rowcount > 0
 
+    async def remove_for_post(self, post_id: uuid.UUID) -> None:
+        await self._session.execute(delete(LikeModel).where(LikeModel.post_id == post_id))
+
     async def move_counter(self, post_id: uuid.UUID, *, by: int) -> None:
         """Add `by` to the likes of the post.
 
