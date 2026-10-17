@@ -79,11 +79,12 @@ class FeedRepository:
             .join(activity, activity.c.post_id == PostModel.id)
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
             .where(
+                PostModel.deleted_at.is_(None),
                 visible_to(
                     viewer_id,
                     author_id=PostModel.author_id,
                     author_visibility=UserProfileModel.visibility,
-                )
+                ),
             )
         )
         if cursor is not None:

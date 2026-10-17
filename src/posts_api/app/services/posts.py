@@ -14,8 +14,10 @@ from posts_api.app.models.follow import Account
 from posts_api.app.models.post import Post, PostWithAuthor
 from posts_api.app.pagination import Cursor
 from posts_api.app.repositories.follows import FollowRepository
+from posts_api.app.repositories.likes import LikeRepository
 from posts_api.app.repositories.posts import PostRepository
 from posts_api.app.repositories.rate_limiter import RateLimiter
+from posts_api.app.repositories.retweets import RetweetRepository
 
 MAX_CONTENT_LENGTH = 280
 
@@ -61,10 +63,14 @@ class PostService:
         posts: PostRepository,
         follows: FollowRepository,
         rate_limiter: RateLimiter,
+        likes: LikeRepository,
+        retweets: RetweetRepository,
         *,
         post_limit: int,
         window_seconds: int,
     ) -> None:
+        self._likes = likes
+        self._retweets = retweets
         self._posts = posts
         self._follows = follows
         self._rate_limiter = rate_limiter
@@ -108,11 +114,37 @@ class PostService:
 
         # The parent is looked up as the author, with the visibility rule on:
         # one they cannot read is answered exactly like one that does not exist.
-        await self._visible_post(parent_id, author.id)
+        parent = await self._posts.lock_visible(parent_id, viewer_id=author.id)
+        if parent is None:
+            raise post_not_found()
+        if parent.deleted:
+            raise ProblemError(
+                status=409,
+                code="post-deleted",
+                title="No se pudo responder",
+                detail="Esta publicación fue eliminada.",
+            )
         reply = await self._posts.create(author.id, sanitized, parent_id=parent_id)
         # Same transaction as the insert: either both land or neither does.
         await self._posts.count_reply(parent_id)
         return reply
+
+    async def delete(self, post_id: uuid.UUID, viewer: Account) -> None:
+        post = await self._posts.lock_visible(post_id, viewer_id=viewer.id)
+        if post is None:
+            raise post_not_found()
+        if post.author_id != viewer.id:
+            raise ProblemError(
+                status=403,
+                code="post-author-required",
+                title="No se pudo eliminar la publicación",
+                detail="Solo el autor puede eliminar la publicación.",
+            )
+        if post.deleted:
+            return
+        await self._likes.remove_for_post(post_id)
+        await self._retweets.remove_for_post(post_id)
+        await self._posts.mark_deleted(post_id)
 
     async def get(self, post_id: uuid.UUID, viewer: Account) -> PostWithAuthor:
         """A single post, or `404` if it does not exist or the viewer cannot see it.
@@ -137,7 +169,7 @@ class PostService:
         return await self._posts.replies_to(post_id, viewer_id=viewer.id, cursor=decoded)
 
     async def _visible_post(self, post_id: uuid.UUID, viewer_id: uuid.UUID) -> PostWithAuthor:
-        post = await self._posts.find_visible(post_id, viewer_id=viewer_id)
+        post = await self._posts.find_visible(post_id, viewer_id=viewer_id, include_deleted=True)
         if post is None:
             raise post_not_found()
         return post
