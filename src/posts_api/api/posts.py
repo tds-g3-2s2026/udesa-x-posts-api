@@ -1,10 +1,11 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from posts_api.api.deps import CurrentUserDep, RedisDep, SessionDep
 from posts_api.api.schemas.feed import FeedPostSummary
+from posts_api.api.schemas.pagination import CursorPage
 from posts_api.api.schemas.posts import CreatePostRequest, PostSummary
 from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.posts import PostRepository
@@ -46,3 +47,28 @@ async def get_post(
     """A single post. `404` for one that does not exist and for one the caller cannot see."""
     post = await service.get(post_id, current_user)
     return FeedPostSummary.of(post)
+
+
+@router.post("/{post_id}/replies", status_code=status.HTTP_201_CREATED)
+async def create_reply(
+    post_id: uuid.UUID,
+    body: CreatePostRequest,
+    current_user: CurrentUserDep,
+    service: ServiceDep,
+) -> PostSummary:
+    """Answer a post. Same body, same checks and same limit as publishing one."""
+    reply = await service.create(current_user, body.content, parent_id=post_id)
+    return PostSummary.of(reply)
+
+
+@router.get("/{post_id}/replies")
+async def list_replies(
+    post_id: uuid.UUID,
+    current_user: CurrentUserDep,
+    service: ServiceDep,
+    cursor: Annotated[str | None, Query()] = None,
+) -> CursorPage[FeedPostSummary]:
+    """The replies to a post, oldest first. `404` when the post itself is not readable."""
+    replies, next_cursor = await service.replies_to(post_id, current_user, cursor=cursor)
+    items = [FeedPostSummary.of(one) for one in replies]
+    return CursorPage(items=items, next_cursor=next_cursor)

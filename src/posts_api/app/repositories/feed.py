@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.app.models.post import PostWithAuthor
 from posts_api.app.pagination import DEFAULT_PAGE_SIZE, Cursor, apply_cursor, page_of
+from posts_api.app.repositories.likes import liked_by
 from posts_api.app.repositories.post_visibility import visible_to
 from posts_api.infrastructure.database.models import FollowModel, PostModel, UserProfileModel
 
@@ -36,11 +37,14 @@ class FeedRepository:
         assumed, since this is exactly the filter a later story extends.
         """
         base = (
-            select(PostModel, UserProfileModel.handle)
+            select(PostModel, UserProfileModel.handle, liked_by(viewer_id))
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
             .join(FollowModel, FollowModel.followee_id == PostModel.author_id)
             .where(
                 FollowModel.follower_id == viewer_id,
+                # Replies live in the same table but are read from the post they
+                # answer, not from the timeline.
+                PostModel.parent_id.is_(None),
                 visible_to(
                     viewer_id,
                     author_id=PostModel.author_id,
@@ -66,8 +70,10 @@ class FeedRepository:
                 likes_count=post.likes_count,
                 retweets_count=post.retweets_count,
                 replies_count=post.replies_count,
+                parent_id=post.parent_id,
+                liked_by_me=liked,
             )
-            for post, handle in found.all()
+            for post, handle, liked in found.all()
         ]
         return page_of(
             posts, limit=limit, at=lambda one: one.created_at, tiebreak=lambda one: one.id

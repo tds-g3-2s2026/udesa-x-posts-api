@@ -30,5 +30,22 @@ def decode_access_token(public_key: Ed25519PublicKey, token: str, *, issuer: str
         public_key,
         algorithms=[TOKEN_ALGORITHM],
         issuer=issuer,
-        options={"require": ["iss"]},
+        # `jti` and `iat` are what the revocation marks of users-api are matched
+        # against, so a token without them cannot be checked and is refused.
+        options={"require": ["iss", "iat", "jti"]},
     )
+
+
+def is_session_revoked(*, token_marked: bool, cutoff: int | None, issued_at: float) -> bool:
+    """Whether users-api closed the session this token belongs to.
+
+    `token_marked` is the mark of a single logout. `cutoff` is the instant after
+    which nothing issued earlier counts, written by a password change or by an
+    account put under review; `None` when there is none.
+
+    Compared with <= and not <: users-api stores the cutoff truncated to the
+    second, so a token issued inside that same second would otherwise survive the
+    very change that was supposed to kill it. The rule is the one `get_current_user`
+    applies in users-api and has to stay identical to it.
+    """
+    return token_marked or (cutoff is not None and issued_at <= cutoff)

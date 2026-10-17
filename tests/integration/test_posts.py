@@ -182,7 +182,9 @@ async def test_e2_h2_ca5_a_protected_authors_post_needs_an_approved_follow(api):
     author, follower, stranger = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     await given_a_profile(author, visibility="protected")
     created = await api.post(
-        "/posts", json={"content": "solo aprobados"}, headers=signed_in_as(author)
+        "/posts",
+        json={"content": "solo aprobados"},
+        headers=signed_in_as(author, profile_visibility="protected"),
     )
     post_id = created.json()["id"]
     await approve_follow(follower, author)

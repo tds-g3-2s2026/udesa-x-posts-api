@@ -78,10 +78,11 @@ sección "Despliegue continuo".
 avisa que una cuenta pasa a revisión por denuncias (ADR-011). La API valida estrictamente el
 issuer al verificar tokens recibidos. Copiar `secret.template.yaml` a `secret.yaml`,
 ignorado por git, y completar `DATABASE_URL` (con esquema `postgresql+asyncpg://`),
-`REDIS_URL`, `JWT_PUBLIC_KEY` (clave pública Ed25519 en PEM) e `INTERNAL_API_TOKEN`, el
-secreto compartido con `users-api` para sus rutas internas, con el mismo valor en los dos
-servicios. En el despliegue, el pipeline arma el Secret con esos cuatro GitHub Secrets del
-repositorio. No aplicar la plantilla vacía ni usar `kubectl apply -f k8s/` en un despliegue:
+`REDIS_URL`, `AUTH_REDIS_URL` (el Redis donde `users-api` escribe las revocaciones, ver
+"Revocación de sesiones"; en el cluster, `redis://redis:6379/0`), `JWT_PUBLIC_KEY` (clave
+pública Ed25519 en PEM) e `INTERNAL_API_TOKEN`, el secreto compartido con `users-api` para sus
+rutas internas, con el mismo valor en los dos servicios. En el despliegue, el pipeline arma el
+Secret con esos cinco GitHub Secrets del repositorio. No aplicar la plantilla vacía ni usar `kubectl apply -f k8s/` en un despliegue:
 incluiría esa plantilla.
 `envFrom` se lee al crear el contenedor: el pipeline pone el hash del ConfigMap y del Secret
 en el pod template, así que un cambio solo de configuración también reemplaza los pods. La
@@ -101,6 +102,25 @@ El dry-run no necesita permisos de escritura, pero `kubectl` consulta discovery
 y esquemas del API server: requiere un kubeconfig y acceso de lectura al cluster.
 No comprueba la existencia de la imagen, los valores secretos ni la cuota libre.
 El PR requiere aprobación del tutor.
+
+## Revocación de sesiones
+
+Un token firmado y vigente no alcanza: `users-api` puede haberlo revocado antes de que venza
+(cierre de sesión, cambio de contraseña, cuenta puesta en revisión por denuncias). Como
+`posts-api` no tiene su propia lista, en cada request autenticado lee las marcas que
+`users-api` escribe en su Redis (base `/0`), solo lectura, con una única consulta (ADR-014):
+
+| Clave | Valor | Revoca |
+|---|---|---|
+| `revoked:jti:<jti>` | `"1"` | ese token |
+| `revoked:user:<uuid>` | segundos Unix | los tokens de la cuenta con `iat <= valor` |
+
+Un token revocado recibe `401` con `code: session-revoked`, igual que en `users-api`. Si ese
+Redis no responde, el request se rechaza con `503` (`auth-unavailable`): sin poder verificar,
+no pasa. Las claves y la regla son un contrato que mantiene `users-api`; cambiar una obliga a
+cambiar la otra. En desarrollo, el `docker-compose` no incluye a `users-api`, así que nadie
+escribe marcas y no se revoca nada. En los tests, `AUTH_REDIS_URL` apunta a otra base que
+`REDIS_URL` (`/2`), porque los tests vacían esta última antes de cada caso.
 
 ## Estructura
 

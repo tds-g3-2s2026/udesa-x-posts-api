@@ -10,6 +10,7 @@ from posts_api.infrastructure.database.models import (
     BlockModel,
     FollowModel,
     FollowRequestModel,
+    LikeModel,
     PostModel,
     ReportModel,
     UserProfileModel,
@@ -29,6 +30,7 @@ async def api():
         async with app.state.session_factory() as session:
             # First: a report points at the profiles and at the posts.
             await session.execute(delete(ReportModel))
+            await session.execute(delete(LikeModel))
             await session.execute(delete(BlockModel))
             await session.execute(delete(FollowRequestModel))
             await session.execute(delete(FollowModel))
@@ -51,14 +53,17 @@ def handle_of(user_id: uuid.UUID) -> str:
     return f"@u{str(user_id)[:8]}"
 
 
-def signed_in_as(user_id: uuid.UUID) -> dict[str, str]:
+def signed_in_as(
+    user_id: uuid.UUID, *, profile_visibility: str | None = "public"
+) -> dict[str, str]:
     """A token for that account, with its own handle.
 
     The handle is derived from the id because the column is unique: two accounts
     cannot share one, and a fixed value would blow up the moment a test signs in
     as more than one person.
     """
-    return {"Authorization": f"Bearer {issue_token(user_id, handle=handle_of(user_id))}"}
+    token = issue_token(user_id, handle=handle_of(user_id), profile_visibility=profile_visibility)
+    return {"Authorization": f"Bearer {token}"}
 
 
 async def given_a_profile(user_id: uuid.UUID, *, visibility: str = "public") -> None:

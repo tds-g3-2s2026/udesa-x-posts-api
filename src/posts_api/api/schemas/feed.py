@@ -1,7 +1,8 @@
 """What one row of the feed looks like on the wire.
 
-Also what `GET /posts/{id}` answers with: the same shape, since both are a
-post plus the little the screen needs about who wrote it.
+Also what `GET /posts/{id}` and `GET /posts/{id}/replies` answer with: the same
+shape, since all of them are a post plus the little the screen needs about who
+wrote it.
 """
 
 import uuid
@@ -26,6 +27,9 @@ class FeedPostSummary(BaseModel):
     likes_count: int = Field(serialization_alias="likesCount")
     retweets_count: int = Field(serialization_alias="retweetsCount")
     replies_count: int = Field(serialization_alias="repliesCount")
+    # The post this one answers, `null` for one that answers nothing.
+    parent_id: uuid.UUID | None = Field(default=None, serialization_alias="parentId")
+    liked_by_me: bool = Field(default=False, serialization_alias="likedByMe")
 
     @classmethod
     def of(cls, post: PostWithAuthor) -> "FeedPostSummary":
@@ -38,4 +42,6 @@ class FeedPostSummary(BaseModel):
             likes_count=post.likes_count,
             retweets_count=post.retweets_count,
             replies_count=post.replies_count,
+            parent_id=post.parent_id,
+            liked_by_me=post.liked_by_me,
         )

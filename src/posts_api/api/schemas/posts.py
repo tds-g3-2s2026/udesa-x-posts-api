@@ -20,6 +20,10 @@ class PostSummary(BaseModel):
     likes_count: int = Field(serialization_alias="likesCount")
     retweets_count: int = Field(serialization_alias="retweetsCount")
     replies_count: int = Field(serialization_alias="repliesCount")
+    parent_id: uuid.UUID | None = Field(default=None, serialization_alias="parentId")
+    # A post that was just written has no likes, so this is always `false` here;
+    # it is on the shape so every post a client reads says the same things.
+    liked_by_me: bool = Field(default=False, serialization_alias="likedByMe")
 
     @classmethod
     def of(cls, post: Post) -> "PostSummary":
@@ -31,4 +35,9 @@ class PostSummary(BaseModel):
             likes_count=post.likes_count,
             retweets_count=post.retweets_count,
             replies_count=post.replies_count,
+            parent_id=post.parent_id,
         )
+
+
+class PostMetrics(BaseModel):
+    published: int
