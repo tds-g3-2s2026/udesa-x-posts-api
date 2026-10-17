@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.app.models.post import Post, PostWithAuthor
 from posts_api.app.pagination import DEFAULT_PAGE_SIZE, Cursor, apply_cursor, page_of
+from posts_api.app.repositories.likes import liked_by
 from posts_api.app.repositories.post_visibility import visible_to
 from posts_api.infrastructure.database.models import PostModel, UserProfileModel
 
@@ -30,7 +31,7 @@ def _to_post(row: PostModel) -> Post:
     )
 
 
-def _to_post_with_author(post: PostModel, handle: str | None) -> PostWithAuthor:
+def _to_post_with_author(post: PostModel, handle: str | None, liked: bool) -> PostWithAuthor:
     return PostWithAuthor(
         id=post.id,
         author_id=post.author_id,
@@ -41,6 +42,7 @@ def _to_post_with_author(post: PostModel, handle: str | None) -> PostWithAuthor:
         retweets_count=post.retweets_count,
         replies_count=post.replies_count,
         parent_id=post.parent_id,
+        liked_by_me=liked,
     )
 
 
@@ -75,7 +77,7 @@ class PostRepository:
         requests aimed at somebody else.
         """
         found = await self._session.execute(
-            select(PostModel, UserProfileModel.handle)
+            select(PostModel, UserProfileModel.handle, liked_by(viewer_id))
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
             .where(
                 PostModel.id == post_id,
@@ -89,8 +91,8 @@ class PostRepository:
         row = found.first()
         if row is None:
             return None
-        post, handle = row
-        return _to_post_with_author(post, handle)
+        post, handle, liked = row
+        return _to_post_with_author(post, handle, liked)
 
     async def count_reply(self, post_id: uuid.UUID) -> None:
         """Add one to the replies counter of the post that was just answered.
@@ -121,7 +123,7 @@ class PostRepository:
         not come back just because it hangs from a post they can read.
         """
         base = (
-            select(PostModel, UserProfileModel.handle)
+            select(PostModel, UserProfileModel.handle, liked_by(viewer_id))
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
             .where(
                 PostModel.parent_id == post_id,
@@ -141,7 +143,7 @@ class PostRepository:
             ascending=True,
         )
         found = await self._session.execute(statement)
-        replies = [_to_post_with_author(post, handle) for post, handle in found.all()]
+        replies = [_to_post_with_author(post, handle, liked) for post, handle, liked in found.all()]
         return page_of(
             replies, limit=limit, at=lambda one: one.created_at, tiebreak=lambda one: one.id
         )
