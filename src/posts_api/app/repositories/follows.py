@@ -8,6 +8,7 @@ changes, it changes here and nowhere else.
 import uuid
 
 from sqlalchemy import delete, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.app.models.follow import Account, ProfileVisibility, UserProfile
@@ -49,16 +50,16 @@ class FollowRepository:
         can change at any time — so it is written back whenever the token
         disagrees with what is stored, not only the first time.
         """
-        row = await self._session.get(UserProfileModel, account.id)
-        if row is None:
-            visibility = account.profile_visibility or ProfileVisibility.PUBLIC
-            row = UserProfileModel(
-                id=account.id, handle=account.handle, visibility=visibility.value
+        await self._session.execute(
+            insert(UserProfileModel)
+            .values(
+                id=account.id,
+                handle=account.handle,
+                visibility=(account.profile_visibility or ProfileVisibility.PUBLIC).value,
             )
-            self._session.add(row)
-            await self._session.flush()
-            return _to_profile(row)
-
+            .on_conflict_do_nothing(index_elements=[UserProfileModel.id])
+        )
+        row = await self._session.get(UserProfileModel, account.id)
         changed = False
         if row.handle is None and account.handle is not None:
             row.handle = account.handle

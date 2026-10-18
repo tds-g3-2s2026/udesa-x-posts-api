@@ -31,9 +31,20 @@ class FeedPostSummary(BaseModel):
     parent_id: uuid.UUID | None = Field(default=None, serialization_alias="parentId")
     liked_by_me: bool = Field(default=False, serialization_alias="likedByMe")
 
+    retweeted_by_me: bool = Field(default=False, serialization_alias="retweetedByMe")
+    retweeted_by: str | None = Field(default=None, serialization_alias="retweetedBy")
+    entry_id: str = Field(serialization_alias="entryId")
+    activity_at: datetime = Field(serialization_alias="activityAt")
+
     @classmethod
     def of(cls, post: PostWithAuthor) -> "FeedPostSummary":
         return cls(
+            entry_id=(
+                f"retweet:{post.retweeter_id}:{post.id}" if post.retweeter_id else f"post:{post.id}"
+            ),
+            activity_at=post.activity_at or post.created_at,
+            retweeted_by=post.retweeted_by,
+            retweeted_by_me=post.retweeted_by_me,
             id=post.id,
             author_id=post.author_id,
             author_handle=post.author_handle,
