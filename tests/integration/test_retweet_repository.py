@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from posts_api.app.repositories.retweets import RetweetRepository
+from posts_api.app.repositories.retweets import RetweetRepository, retweeted_by
 from posts_api.infrastructure.database.models import PostModel, RetweetModel, UserProfileModel
 from posts_api.main import app
 from tests.conftest import requires_services
@@ -73,3 +73,21 @@ async def test_retweet_primary_key_and_foreign_keys_are_enforced(api):
             session.add(RetweetModel(user_id=user_id, post_id=post_id))
             with pytest.raises(IntegrityError):
                 await session.flush()
+
+
+async def test_retweeted_by_is_specific_to_the_reader_and_post(api):
+    user, post = await seed()
+    other = uuid.uuid4()
+    async with app.state.session_factory() as session:
+        session.add(UserProfileModel(id=other))
+        second = PostModel(author_id=user, content="second")
+        session.add(second)
+        await session.flush()
+        await RetweetRepository(session).add(user, post)
+        rows = (
+            await session.execute(select(PostModel.id, retweeted_by(user), retweeted_by(other)))
+        ).all()
+        assert {row[0]: tuple(row[1:]) for row in rows} == {
+            post: (True, False),
+            second.id: (False, False),
+        }
