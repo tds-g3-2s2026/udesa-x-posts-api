@@ -234,3 +234,113 @@ async def test_e2_h3_ca1_simultaneous_deletions_keep_one_timestamp(api):
     await remove(api, author, post)
     async with app.state.session_factory() as session:
         assert (await session.get(PostModel, uuid.UUID(post))).deleted_at == first
+
+
+async def test_report_waits_for_deletion_and_rejects_the_deleted_target(api, monkeypatch):
+    from posts_api.app.errors import ProblemError
+    from posts_api.app.models.report import ReportReason
+    from posts_api.app.repositories.follows import FollowRepository
+    from posts_api.app.repositories.reports import ReportRepository
+    from posts_api.app.services.reports import ReportService
+
+    author, reporter = uuid.uuid4(), uuid.uuid4()
+    post_id = uuid.UUID(await publish(api, author))
+    await given_a_profile(reporter)
+    attempting = asyncio.Event()
+
+    async with app.state.session_factory() as deletion_session:
+        posts = PostRepository(deletion_session)
+        await posts.lock_visible(post_id, viewer_id=author)
+        await posts.mark_deleted(post_id)
+
+        async def report():
+            async with app.state.session_factory() as session:
+                targets = PostRepository(session)
+                original = targets.lock_visible
+
+                async def lock(*args, **kwargs):
+                    attempting.set()
+                    return await original(*args, **kwargs)
+
+                monkeypatch.setattr(targets, "lock_visible", lock)
+                service = ReportService(
+                    ReportRepository(session), FollowRepository(session), targets, None, None
+                )
+                with pytest.raises(ProblemError) as error:
+                    await service.report(
+                        Account(id=reporter), reason=ReportReason.SPAM, post_id=post_id
+                    )
+                assert error.value.status == 404
+                await session.rollback()
+
+        task = asyncio.create_task(report())
+        await asyncio.wait_for(attempting.wait(), timeout=5)
+        assert not task.done()
+        await deletion_session.commit()
+        await asyncio.wait_for(task, timeout=5)
+
+    async with app.state.session_factory() as session:
+        assert await session.scalar(select(func.count()).select_from(ReportModel)) == 0
+
+
+async def test_deletion_waits_for_an_accepted_report_and_preserves_it(api, monkeypatch):
+    from posts_api.app.models.report import ReportReason
+    from posts_api.app.repositories.follows import FollowRepository
+    from posts_api.app.repositories.reports import ReportRepository
+    from posts_api.app.services.reports import ReportService
+
+    author, reporter = uuid.uuid4(), uuid.uuid4()
+    post_id = uuid.UUID(await publish(api, author))
+    await given_a_profile(reporter)
+    validated, release, deleting = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    class PausedLimiter:
+        async def hit(self, *args, **kwargs):
+            validated.set()
+            await release.wait()
+            return 1
+
+    async def report():
+        async with app.state.session_factory() as session:
+            service = ReportService(
+                ReportRepository(session),
+                FollowRepository(session),
+                PostRepository(session),
+                PausedLimiter(),
+                None,
+            )
+            await service.report(Account(id=reporter), reason=ReportReason.SPAM, post_id=post_id)
+            await session.commit()
+
+    async def delete():
+        async with app.state.session_factory() as session:
+            posts = PostRepository(session)
+            original = posts.lock_visible
+
+            async def lock(*args, **kwargs):
+                deleting.set()
+                return await original(*args, **kwargs)
+
+            monkeypatch.setattr(posts, "lock_visible", lock)
+            service = PostService(
+                posts,
+                None,
+                None,
+                LikeRepository(session),
+                RetweetRepository(session),
+                post_limit=100,
+                window_seconds=3600,
+            )
+            await service.delete(post_id, Account(id=author))
+            await session.commit()
+
+    report_task = asyncio.create_task(report())
+    await asyncio.wait_for(validated.wait(), timeout=5)
+    delete_task = asyncio.create_task(delete())
+    await asyncio.wait_for(deleting.wait(), timeout=5)
+    assert not delete_task.done()
+    release.set()
+    await asyncio.wait_for(asyncio.gather(report_task, delete_task), timeout=5)
+    async with app.state.session_factory() as session:
+        assert (await session.get(PostModel, post_id)).deleted_at is not None
+        assert await session.scalar(select(ReportModel.post_id)) == post_id
