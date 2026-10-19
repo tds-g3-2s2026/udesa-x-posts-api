@@ -183,6 +183,7 @@ class PostModel(Base):
     parent_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True), ForeignKey("posts.id"), default=None
     )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     content: Mapped[str] = mapped_column(String(280))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # Stored as columns and updated inside the same transaction as the action
@@ -232,6 +233,22 @@ class LikeModel(Base):
     second like from the same account cannot exist."""
 
     __tablename__ = "likes"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("user_profiles.id"), primary_key=True
+    )
+    post_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("posts.id"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RetweetModel(Base):
+    __tablename__ = "retweets"
+    __table_args__ = (
+        Index("ix_retweets_user_created", "user_id", "created_at", "post_id"),
+        Index("ix_retweets_post", "post_id"),
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True), ForeignKey("user_profiles.id"), primary_key=True

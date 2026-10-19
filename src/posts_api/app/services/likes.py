@@ -47,5 +47,6 @@ class LikeService:
 
     async def _readable(self, post_id: uuid.UUID, viewer_id: uuid.UUID) -> None:
         """A post the viewer cannot read cannot be liked, and says so like a missing one."""
-        if await self._posts.find_visible(post_id, viewer_id=viewer_id) is None:
+        post = await self._posts.lock_visible(post_id, viewer_id=viewer_id)
+        if post is None or post.deleted:
             raise post_not_found()

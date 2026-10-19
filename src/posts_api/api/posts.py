@@ -8,7 +8,9 @@ from posts_api.api.schemas.feed import FeedPostSummary
 from posts_api.api.schemas.pagination import CursorPage
 from posts_api.api.schemas.posts import CreatePostRequest, PostSummary
 from posts_api.app.repositories.follows import FollowRepository
+from posts_api.app.repositories.likes import LikeRepository
 from posts_api.app.repositories.posts import PostRepository
+from posts_api.app.repositories.retweets import RetweetRepository
 from posts_api.app.services.posts import PostService
 from posts_api.config.settings import get_settings
 from posts_api.infrastructure.redis.rate_limiter import RedisRateLimiter
@@ -23,6 +25,8 @@ def get_post_service(session: SessionDep, redis: RedisDep) -> PostService:
         PostRepository(session),
         FollowRepository(session),
         RedisRateLimiter(redis),
+        LikeRepository(session),
+        RetweetRepository(session),
         post_limit=settings.post_rate_limit,
         window_seconds=settings.post_rate_window_seconds,
     )
@@ -72,3 +76,10 @@ async def list_replies(
     replies, next_cursor = await service.replies_to(post_id, current_user, cursor=cursor)
     items = [FeedPostSummary.of(one) for one in replies]
     return CursorPage(items=items, next_cursor=next_cursor)
+
+
+@router.delete("/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_post(
+    post_id: uuid.UUID, current_user: CurrentUserDep, service: ServiceDep
+) -> None:
+    await service.delete(post_id, current_user)

@@ -41,12 +41,17 @@ class PostWithAuthor:
     id: uuid.UUID
     author_id: uuid.UUID
     author_handle: str | None
-    content: str
+    content: str | None
     created_at: datetime
     likes_count: int
     retweets_count: int
     replies_count: int
+    deleted: bool = False
     parent_id: uuid.UUID | None = None
     # Whether whoever is reading already liked it: a fact about the reader, not
     # about the post, so it is filled in by the query that reads it.
     liked_by_me: bool = False
+    retweeted_by_me: bool = False
+    retweeted_by: str | None = None
+    retweeter_id: uuid.UUID | None = None
+    activity_at: datetime | None = None

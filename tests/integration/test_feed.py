@@ -127,12 +127,17 @@ async def test_a_feed_item_carries_the_fields_the_screen_needs(api):
         "authorDisplayName",
         "authorAvatarUrl",
         "content",
+        "deleted",
         "createdAt",
         "likesCount",
         "retweetsCount",
         "repliesCount",
         "parentId",
         "likedByMe",
+        "retweetedByMe",
+        "retweetedBy",
+        "entryId",
+        "activityAt",
     }
     assert row["parentId"] is None
     assert row["authorHandle"] == handle_of(author)

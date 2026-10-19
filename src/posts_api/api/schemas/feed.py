@@ -22,7 +22,8 @@ class FeedPostSummary(BaseModel):
     # not missing, so the screen can read the final shape today.
     author_display_name: str | None = Field(default=None, serialization_alias="authorDisplayName")
     author_avatar_url: str | None = Field(default=None, serialization_alias="authorAvatarUrl")
-    content: str
+    content: str | None
+    deleted: bool
     created_at: datetime = Field(serialization_alias="createdAt")
     likes_count: int = Field(serialization_alias="likesCount")
     retweets_count: int = Field(serialization_alias="retweetsCount")
@@ -31,13 +32,25 @@ class FeedPostSummary(BaseModel):
     parent_id: uuid.UUID | None = Field(default=None, serialization_alias="parentId")
     liked_by_me: bool = Field(default=False, serialization_alias="likedByMe")
 
+    retweeted_by_me: bool = Field(default=False, serialization_alias="retweetedByMe")
+    retweeted_by: str | None = Field(default=None, serialization_alias="retweetedBy")
+    entry_id: str = Field(serialization_alias="entryId")
+    activity_at: datetime = Field(serialization_alias="activityAt")
+
     @classmethod
     def of(cls, post: PostWithAuthor) -> "FeedPostSummary":
         return cls(
+            entry_id=(
+                f"retweet:{post.retweeter_id}:{post.id}" if post.retweeter_id else f"post:{post.id}"
+            ),
+            activity_at=post.activity_at or post.created_at,
+            retweeted_by=post.retweeted_by,
+            retweeted_by_me=post.retweeted_by_me,
             id=post.id,
             author_id=post.author_id,
             author_handle=post.author_handle,
             content=post.content,
+            deleted=post.deleted,
             created_at=post.created_at,
             likes_count=post.likes_count,
             retweets_count=post.retweets_count,

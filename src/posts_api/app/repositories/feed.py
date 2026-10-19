@@ -1,20 +1,23 @@
-"""Everything the feed endpoint reads from PostgreSQL.
-
-Its own repository, not a method bolted onto `PostRepository`: the feed joins
-`posts` against `follows` and `user_profiles`, a shape none of the other post
-reads need.
-"""
+"""Read followed activity with a single order and visibility check before paging."""
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import String, literal, select, tuple_, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
+from posts_api.app.feed_pagination import FeedCursor
 from posts_api.app.models.post import PostWithAuthor
-from posts_api.app.pagination import DEFAULT_PAGE_SIZE, Cursor, apply_cursor, page_of
+from posts_api.app.pagination import DEFAULT_PAGE_SIZE
 from posts_api.app.repositories.likes import liked_by
 from posts_api.app.repositories.post_visibility import visible_to
-from posts_api.infrastructure.database.models import FollowModel, PostModel, UserProfileModel
+from posts_api.app.repositories.retweets import retweeted_by
+from posts_api.infrastructure.database.models import (
+    FollowModel,
+    PostModel,
+    RetweetModel,
+    UserProfileModel,
+)
 
 
 class FeedRepository:
@@ -25,26 +28,58 @@ class FeedRepository:
         self,
         viewer_id: uuid.UUID,
         *,
-        cursor: Cursor | None = None,
+        cursor: FeedCursor | None = None,
         limit: int = DEFAULT_PAGE_SIZE,
     ) -> tuple[list[PostWithAuthor], str | None]:
-        """The posts of whoever `viewer_id` follows, most recent first.
-
-        Restricted to followed authors by the join to `follows`, and to
-        visible ones by `visible_to`: the second condition is redundant with
-        the first today, because following a protected account already means
-        an approved relationship exists, but it is written explicitly and not
-        assumed, since this is exactly the filter a later story extends.
-        """
-        base = (
-            select(PostModel, UserProfileModel.handle, liked_by(viewer_id))
-            .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
+        sharer = aliased(UserProfileModel)
+        originals = (
+            select(
+                PostModel.id.label("post_id"),
+                PostModel.created_at.label("activity_at"),
+                literal(0).label("kind"),
+                PostModel.author_id.label("actor_id"),
+                literal(None, type_=String).label("shared_by"),
+            )
             .join(FollowModel, FollowModel.followee_id == PostModel.author_id)
+            .where(FollowModel.follower_id == viewer_id, PostModel.parent_id.is_(None))
+        )
+        shares = (
+            select(
+                RetweetModel.post_id,
+                RetweetModel.created_at,
+                literal(1),
+                RetweetModel.user_id,
+                sharer.handle,
+            )
+            .join(FollowModel, FollowModel.followee_id == RetweetModel.user_id)
+            .join(sharer, sharer.id == RetweetModel.user_id)
             .where(
                 FollowModel.follower_id == viewer_id,
-                # Replies live in the same table but are read from the post they
-                # answer, not from the timeline.
-                PostModel.parent_id.is_(None),
+                visible_to(viewer_id, author_id=sharer.id, author_visibility=sharer.visibility),
+            )
+        )
+        activity = union_all(originals, shares).subquery()
+        position = (
+            activity.c.activity_at,
+            activity.c.post_id,
+            activity.c.kind,
+            activity.c.actor_id,
+        )
+        statement = (
+            select(
+                PostModel,
+                UserProfileModel.handle,
+                activity.c.activity_at,
+                activity.c.kind,
+                activity.c.actor_id,
+                activity.c.shared_by,
+                liked_by(viewer_id),
+                retweeted_by(viewer_id),
+            )
+            .join(activity, activity.c.post_id == PostModel.id)
+            .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
+            .where(
+                PostModel.deleted_at.is_(None),
                 visible_to(
                     viewer_id,
                     author_id=PostModel.author_id,
@@ -52,14 +87,13 @@ class FeedRepository:
                 ),
             )
         )
-        statement = apply_cursor(
-            base,
-            order_by=PostModel.created_at,
-            tiebreak_by=PostModel.id,
-            cursor=cursor,
-            limit=limit,
-        )
-        found = await self._session.execute(statement)
+        if cursor is not None:
+            statement = statement.where(
+                tuple_(*position) < tuple_(cursor.at, cursor.post_id, cursor.kind, cursor.actor_id)
+            )
+        statement = statement.order_by(*(column.desc() for column in position)).limit(limit + 1)
+        rows = (await self._session.execute(statement)).all()
+        page = rows[:limit]
         posts = [
             PostWithAuthor(
                 id=post.id,
@@ -72,9 +106,15 @@ class FeedRepository:
                 replies_count=post.replies_count,
                 parent_id=post.parent_id,
                 liked_by_me=liked,
+                retweeted_by_me=retweeted,
+                activity_at=at,
+                retweeted_by=shared_by,
+                retweeter_id=actor if kind else None,
             )
-            for post, handle, liked in found.all()
+            for post, handle, at, kind, actor, shared_by, liked, retweeted in page
         ]
-        return page_of(
-            posts, limit=limit, at=lambda one: one.created_at, tiebreak=lambda one: one.id
-        )
+        next_cursor = None
+        if len(rows) > limit:
+            post, _, at, kind, actor, *_ = page[-1]
+            next_cursor = FeedCursor(at, post.id, kind, actor).encode()
+        return posts, next_cursor

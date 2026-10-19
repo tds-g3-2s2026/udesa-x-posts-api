@@ -15,6 +15,7 @@ from posts_api.app.models.post import Post, PostWithAuthor
 from posts_api.app.pagination import DEFAULT_PAGE_SIZE, Cursor, apply_cursor, page_of
 from posts_api.app.repositories.likes import liked_by
 from posts_api.app.repositories.post_visibility import visible_to
+from posts_api.app.repositories.retweets import retweeted_by
 from posts_api.infrastructure.database.models import PostModel, UserProfileModel
 
 
@@ -31,18 +32,22 @@ def _to_post(row: PostModel) -> Post:
     )
 
 
-def _to_post_with_author(post: PostModel, handle: str | None, liked: bool) -> PostWithAuthor:
+def _to_post_with_author(
+    post: PostModel, handle: str | None, liked: bool, retweeted: bool
+) -> PostWithAuthor:
     return PostWithAuthor(
         id=post.id,
         author_id=post.author_id,
         author_handle=handle,
-        content=post.content,
+        content=None if post.deleted_at else post.content,
+        deleted=post.deleted_at is not None,
         created_at=post.created_at,
-        likes_count=post.likes_count,
-        retweets_count=post.retweets_count,
+        likes_count=0 if post.deleted_at else post.likes_count,
+        retweets_count=0 if post.deleted_at else post.retweets_count,
         replies_count=post.replies_count,
         parent_id=post.parent_id,
-        liked_by_me=liked,
+        liked_by_me=liked and post.deleted_at is None,
+        retweeted_by_me=retweeted and post.deleted_at is None,
     )
 
 
@@ -67,7 +72,7 @@ class PostRepository:
         )
 
     async def find_visible(
-        self, post_id: uuid.UUID, *, viewer_id: uuid.UUID
+        self, post_id: uuid.UUID, *, viewer_id: uuid.UUID, include_deleted: bool = False
     ) -> PostWithAuthor | None:
         """The post, only if `viewer_id` is allowed to read its author's posts.
 
@@ -77,10 +82,11 @@ class PostRepository:
         requests aimed at somebody else.
         """
         found = await self._session.execute(
-            select(PostModel, UserProfileModel.handle, liked_by(viewer_id))
+            select(PostModel, UserProfileModel.handle, liked_by(viewer_id), retweeted_by(viewer_id))
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
             .where(
                 PostModel.id == post_id,
+                True if include_deleted else PostModel.deleted_at.is_(None),
                 visible_to(
                     viewer_id,
                     author_id=PostModel.author_id,
@@ -91,8 +97,24 @@ class PostRepository:
         row = found.first()
         if row is None:
             return None
-        post, handle, liked = row
-        return _to_post_with_author(post, handle, liked)
+        post, handle, liked, retweeted = row
+        return _to_post_with_author(post, handle, liked, retweeted)
+
+    async def lock_visible(
+        self, post_id: uuid.UUID, *, viewer_id: uuid.UUID
+    ) -> PostWithAuthor | None:
+        """Lock the post before checking its current state or changing its relations."""
+        await self._session.execute(
+            select(PostModel.id).where(PostModel.id == post_id).with_for_update()
+        )
+        return await self.find_visible(post_id, viewer_id=viewer_id, include_deleted=True)
+
+    async def mark_deleted(self, post_id: uuid.UUID) -> None:
+        await self._session.execute(
+            update(PostModel)
+            .where(PostModel.id == post_id, PostModel.deleted_at.is_(None))
+            .values(deleted_at=func.clock_timestamp(), likes_count=0, retweets_count=0)
+        )
 
     async def count_reply(self, post_id: uuid.UUID) -> None:
         """Add one to the replies counter of the post that was just answered.
@@ -123,7 +145,7 @@ class PostRepository:
         not come back just because it hangs from a post they can read.
         """
         base = (
-            select(PostModel, UserProfileModel.handle, liked_by(viewer_id))
+            select(PostModel, UserProfileModel.handle, liked_by(viewer_id), retweeted_by(viewer_id))
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
             .where(
                 PostModel.parent_id == post_id,
@@ -143,7 +165,10 @@ class PostRepository:
             ascending=True,
         )
         found = await self._session.execute(statement)
-        replies = [_to_post_with_author(post, handle, liked) for post, handle, liked in found.all()]
+        replies = [
+            _to_post_with_author(post, handle, liked, retweeted)
+            for post, handle, liked, retweeted in found.all()
+        ]
         return page_of(
             replies, limit=limit, at=lambda one: one.created_at, tiebreak=lambda one: one.id
         )

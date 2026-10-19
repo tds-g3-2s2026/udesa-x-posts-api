@@ -285,12 +285,17 @@ async def test_a_reply_listed_carries_the_shape_of_a_feed_row(api):
         "authorDisplayName",
         "authorAvatarUrl",
         "content",
+        "deleted",
         "createdAt",
         "likesCount",
         "retweetsCount",
         "repliesCount",
         "parentId",
         "likedByMe",
+        "retweetedByMe",
+        "retweetedBy",
+        "entryId",
+        "activityAt",
     }
     assert row["authorHandle"] == handle_of(replier)
     assert row["parentId"] == original
