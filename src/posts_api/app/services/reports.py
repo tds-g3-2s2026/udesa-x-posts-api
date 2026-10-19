@@ -85,8 +85,8 @@ class ReportService:
         if post_id is not None:
             # Only a post the reporter can see can be reported: anything else
             # answers the same `404` as `PostService.get`, for the same reason.
-            post = await self._posts.find_visible(post_id, viewer_id=reporter.id)
-            if post is None:
+            post = await self._posts.lock_visible(post_id, viewer_id=reporter.id)
+            if post is None or post.deleted:
                 raise ProblemError(
                     status=404,
                     code="post-not-found",

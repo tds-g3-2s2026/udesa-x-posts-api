@@ -51,3 +51,43 @@ def test_the_posts_revision_does_nothing_where_0001_already_made_the_table():
     command.upgrade(config, "head")
 
     assert {"posts", "reports"} <= asyncio.run(_tables())
+
+
+def test_soft_delete_migration_preserves_existing_posts():
+    config = Config("alembic.ini")
+    command.downgrade(config, "0006_retweets")
+    asyncio.run(
+        _execute("""
+        INSERT INTO user_profiles (id, visibility, followers_count, following_count)
+        VALUES ('77777777-7777-4777-8777-777777777777', 'public', 0, 0);
+    """)
+    )
+    asyncio.run(
+        _execute("""
+        INSERT INTO posts (author_id, content, likes_count, retweets_count, replies_count)
+        VALUES ('77777777-7777-4777-8777-777777777777', 'preserved', 0, 0, 0)
+    """)
+    )
+    command.upgrade(config, "head")
+
+    async def check():
+        engine = create_async_engine(get_settings().database_url)
+        async with engine.connect() as connection:
+            row = (
+                await connection.execute(
+                    text(
+                        "SELECT content, deleted_at FROM posts "
+                        "WHERE author_id = '77777777-7777-4777-8777-777777777777'"
+                    )
+                )
+            ).one()
+            assert row.content == "preserved" and row.deleted_at is None
+        await engine.dispose()
+
+    asyncio.run(check())
+    asyncio.run(
+        _execute("DELETE FROM posts WHERE author_id = '77777777-7777-4777-8777-777777777777'")
+    )
+    asyncio.run(
+        _execute("DELETE FROM user_profiles WHERE id = '77777777-7777-4777-8777-777777777777'")
+    )
