@@ -59,6 +59,10 @@ uv run pytest --cov=src --cov-report=term              # + tests/integration, re
 - Tests en `tests/unit/` y `tests/integration/`. Identificadores de historia
   (`E3-H1.CA2`, etc.) solo en el nombre de la función de test, nunca en `src/` ni en
   comentarios, como pide "Trazabilidad de criterios de aceptación" en `CONVENCIONES.md`.
+- `contracts/events/` es una copia de `udesa-x-platform/docs/eventos/` con los eventos que
+  este servicio publica o consume (ADR-017 de platform). No se edita acá: se cambia en
+  platform y se trae con su `scripts/sync-contracts.sh`. El job `Contratos de eventos al dia`
+  del CI falla si la copia difiere. Los tests validan contra estos esquemas los mensajes.
 - Documentación general del sistema: consultar `../udesa-x-platform/docs/`
   (`ARQUITECTURA.md`, `CONVENCIONES.md`, `PLANIFICACION.md`) y los ADR 005, 009, 011 y 014.
 

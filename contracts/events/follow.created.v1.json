@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:udesa-x:eventos:follow.created.v1",
+  "title": "follow.created.v1",
+  "description": "Una cuenta empezó a seguir a otra: por un follow directo a un perfil público o por la aprobación de una solicitud a un perfil protegido. Lo publica posts-api; notifications-api avisa por push a la cuenta seguida.",
+  "type": "object",
+  "required": ["specversion", "id", "source", "type", "time", "data"],
+  "additionalProperties": false,
+  "properties": {
+    "specversion": { "const": "1.0" },
+    "id": {
+      "description": "Identificador único del evento. El consumidor lo usa para descartar repetidos.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "source": { "const": "posts-api" },
+    "type": { "const": "follow.created.v1" },
+    "time": {
+      "description": "Instante en que se creó el follow.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "data": {
+      "type": "object",
+      "required": ["follower_id", "follower_handle", "followee_id"],
+      "additionalProperties": false,
+      "properties": {
+        "follower_id": {
+          "description": "Cuenta que empezó a seguir.",
+          "type": "string",
+          "format": "uuid"
+        },
+        "follower_handle": {
+          "description": "Handle de quien empezó a seguir, para el texto del push. Null si posts-api no lo conoce.",
+          "type": ["string", "null"]
+        },
+        "followee_id": {
+          "description": "Cuenta seguida: la que recibe la notificación.",
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "specversion": "1.0",
+      "id": "0199f3a2-7c41-7d2e-9a10-3b5c8e1f4a01",
+      "source": "posts-api",
+      "type": "follow.created.v1",
+      "time": "2026-10-23T14:05:12Z",
+      "data": {
+        "follower_id": "0f8c2a5e-4b7d-4e1a-9c3f-2d6b8a1e5f70",
+        "follower_handle": "juanperez",
+        "followee_id": "7a1d3c9b-2e4f-4a6b-8d0c-1f3e5a7b9c2d"
+      }
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:udesa-x:eventos:user.deleted.v1",
+  "title": "user.deleted.v1",
+  "description": "Una cuenta se eliminó. Lo publica users-api; posts-api y notifications-api limpian lo que guardan de ella.",
+  "type": "object",
+  "required": ["specversion", "id", "source", "type", "time", "data"],
+  "additionalProperties": false,
+  "properties": {
+    "specversion": { "const": "1.0" },
+    "id": {
+      "description": "Identificador único del evento. El consumidor lo usa para descartar repetidos.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "source": { "const": "users-api" },
+    "type": { "const": "user.deleted.v1" },
+    "time": {
+      "description": "Instante en que se eliminó la cuenta.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "data": {
+      "type": "object",
+      "required": ["user_id"],
+      "additionalProperties": false,
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "specversion": "1.0",
+      "id": "0199f3b0-3c4d-7e5f-a061-7c8d9e0f1a23",
+      "source": "users-api",
+      "type": "user.deleted.v1",
+      "time": "2026-10-23T15:20:00Z",
+      "data": {
+        "user_id": "7a1d3c9b-2e4f-4a6b-8d0c-1f3e5a7b9c2d"
+      }
+    }
+  ]
+}
