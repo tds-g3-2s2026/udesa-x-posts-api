@@ -15,6 +15,7 @@ class FakeImageStorage(ImageStorage):
         self.fail_on_put: int | None = None
         self.puts = 0
         self.fail_on_url = False
+        self.fail_on_delete = False
 
     async def put(self, key: str, body: BinaryIO, *, content_type: str) -> None:
         self.puts += 1
@@ -24,6 +25,8 @@ class FakeImageStorage(ImageStorage):
         self.content_types[key] = content_type
 
     async def delete(self, key: str) -> None:
+        if self.fail_on_delete:
+            raise ImageStorageError("simulated failure")
         self.files.pop(key, None)
 
     async def url_for(self, key: str) -> str:

@@ -1,5 +1,6 @@
 import uuid
 
+import pytest
 from sqlalchemy import func, select
 
 from posts_api.app.image_rules import MAX_IMAGE_BYTES
@@ -258,6 +259,47 @@ async def test_a_failed_upload_leaves_no_post_and_removes_what_was_already_up(ap
     assert response.json()["type"] == "https://udesa-x.dev/errors/images-unavailable"
     assert app.state.image_storage.files == {}
     assert (await stored_posts(), await stored_media()) == (0, 0)
+
+
+async def test_a_refused_cleanup_does_not_hide_the_original_failure(api):
+    author = uuid.uuid4()
+    app.state.image_storage.fail_on_put = 2
+    app.state.image_storage.fail_on_delete = True
+
+    response = await post_with(api, author, files=pictures(PNG, PNG))
+
+    assert response.status_code == 503
+    assert response.json()["type"] == "https://udesa-x.dev/errors/images-unavailable"
+    assert (await stored_posts(), await stored_media()) == (0, 0)
+
+
+async def test_a_database_failure_after_the_upload_removes_the_files_and_the_post(api, monkeypatch):
+    async def broken(self, post_id, media):
+        raise RuntimeError("simulated database failure")
+
+    monkeypatch.setattr(PostMediaRepository, "add", broken)
+
+    with pytest.raises(RuntimeError):
+        await post_with(api, uuid.uuid4(), files=pictures(PNG, PNG))
+
+    assert app.state.image_storage.files == {}
+    assert (await stored_posts(), await stored_media()) == (0, 0)
+
+
+async def test_a_text_part_over_16_kib_is_refused_as_too_long(api):
+    response = await post_with(api, uuid.uuid4(), text="a" * (16 * 1024 + 1))
+
+    assert response.status_code == 422
+    assert response.json()["type"] == "https://udesa-x.dev/errors/post-too-long"
+    assert await stored_posts() == 0
+
+
+async def test_a_text_part_that_is_not_utf8_is_an_invalid_multipart(api):
+    response = await post_with(api, uuid.uuid4(), text=b"\xff\xfe\xfa")
+
+    assert response.status_code == 400
+    assert response.json()["type"] == "https://udesa-x.dev/errors/invalid-multipart"
+    assert await stored_posts() == 0
 
 
 async def test_without_a_bucket_publishing_an_image_is_unavailable_but_text_still_works(api):
