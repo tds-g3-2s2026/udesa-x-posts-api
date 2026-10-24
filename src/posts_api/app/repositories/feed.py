@@ -55,7 +55,12 @@ class FeedRepository:
             .join(sharer, sharer.id == RetweetModel.user_id)
             .where(
                 FollowModel.follower_id == viewer_id,
-                visible_to(viewer_id, author_id=sharer.id, author_visibility=sharer.visibility),
+                visible_to(
+                    viewer_id,
+                    author_id=sharer.id,
+                    author_visibility=sharer.visibility,
+                    author_deleted_at=sharer.deleted_at,
+                ),
             )
         )
         activity = union_all(originals, shares).subquery()
@@ -69,6 +74,7 @@ class FeedRepository:
             select(
                 PostModel,
                 UserProfileModel.handle,
+                UserProfileModel.deleted_at,
                 activity.c.activity_at,
                 activity.c.kind,
                 activity.c.actor_id,
@@ -84,6 +90,9 @@ class FeedRepository:
                     viewer_id,
                     author_id=PostModel.author_id,
                     author_visibility=UserProfileModel.visibility,
+                    author_deleted_at=UserProfileModel.deleted_at,
+                    # A reply of a closed account that somebody retweeted stays.
+                    keeps_deleted_author=PostModel.parent_id.is_not(None),
                 ),
             )
         )
@@ -98,7 +107,8 @@ class FeedRepository:
             PostWithAuthor(
                 id=post.id,
                 author_id=post.author_id,
-                author_handle=handle,
+                author_handle=None if closed_at else handle,
+                author_deleted=closed_at is not None,
                 content=post.content,
                 created_at=post.created_at,
                 likes_count=post.likes_count,
@@ -111,10 +121,10 @@ class FeedRepository:
                 retweeted_by=shared_by,
                 retweeter_id=actor if kind else None,
             )
-            for post, handle, at, kind, actor, shared_by, liked, retweeted in page
+            for post, handle, closed_at, at, kind, actor, shared_by, liked, retweeted in page
         ]
         next_cursor = None
         if len(rows) > limit:
-            post, _, at, kind, actor, *_ = page[-1]
+            post, _, _, at, kind, actor, *_ = page[-1]
             next_cursor = FeedCursor(at, post.id, kind, actor).encode()
         return posts, next_cursor

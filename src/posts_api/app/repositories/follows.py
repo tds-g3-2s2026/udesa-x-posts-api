@@ -33,8 +33,15 @@ class FollowRepository:
         self._session = session
 
     async def find_profile(self, user_id: uuid.UUID) -> UserProfile | None:
+        """The account, or None when it is unknown or already closed.
+
+        A closed account is answered like one that never existed, so every
+        route that starts from this lookup refuses it with the same 404.
+        """
         row = await self._session.get(UserProfileModel, user_id)
-        return _to_profile(row) if row is not None else None
+        if row is None or row.deleted_at is not None:
+            return None
+        return _to_profile(row)
 
     async def ensure_profile(self, account: Account) -> UserProfile:
         """The profile of whoever is signed in, created the first time they appear.
@@ -106,6 +113,7 @@ class FollowRepository:
             .where(
                 UserProfileModel.id != viewer_id,
                 UserProfileModel.id.not_in(already_followed),
+                UserProfileModel.deleted_at.is_(None),
             )
             .order_by(UserProfileModel.followers_count.desc(), UserProfileModel.id)
             .limit(limit)

@@ -1,6 +1,8 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import update
+
 from posts_api.app.pagination import DEFAULT_PAGE_SIZE
 from posts_api.infrastructure.database.models import FollowModel, PostModel, UserProfileModel
 from posts_api.main import app
@@ -126,6 +128,7 @@ async def test_a_feed_item_carries_the_fields_the_screen_needs(api):
         "authorHandle",
         "authorDisplayName",
         "authorAvatarUrl",
+        "authorDeleted",
         "content",
         "deleted",
         "createdAt",
@@ -149,3 +152,22 @@ async def test_the_feed_needs_a_token(api):
     response = await api.get("/feed")
 
     assert response.status_code == 401
+
+
+async def test_e1_h4_ca4_deleted_author_posts_hidden_from_feed(api):
+    """The filter is in the query: the follow is still there, as it is before the event arrives."""
+    viewer, author, other = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    await insert_follow(viewer, author)
+    await insert_follow(viewer, other)
+    now = datetime.now(UTC)
+    await insert_post(author, "de la cuenta que se va", now)
+    await insert_post(other, "de otra cuenta", now + timedelta(seconds=1))
+    async with app.state.session_factory() as session:
+        await session.execute(
+            update(UserProfileModel).where(UserProfileModel.id == author).values(deleted_at=now)
+        )
+        await session.commit()
+
+    response = await api.get("/feed", headers=signed_in_as(viewer))
+
+    assert [one["content"] for one in response.json()["items"]] == ["de otra cuenta"]

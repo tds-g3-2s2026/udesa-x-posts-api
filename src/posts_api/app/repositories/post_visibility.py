@@ -20,8 +20,16 @@ def visible_to(
     *,
     author_id: InstrumentedAttribute,
     author_visibility: InstrumentedAttribute,
+    author_deleted_at: InstrumentedAttribute,
+    keeps_deleted_author: ColumnElement[bool] | None = None,
 ) -> ColumnElement[bool]:
-    """Whether the author behind these two columns lets `viewer_id` read their posts.
+    """Whether the author behind these columns lets `viewer_id` read their posts.
+
+    A deleted author is read by nobody, except where `keeps_deleted_author` holds:
+    the replies stay, so the threads they belong to are not broken, and the
+    caller says which rows are replies. The rest of the rule still applies to
+    them: closing an account leaves it public and with no follows and no blocks,
+    so a reply is not hidden for having belonged to a protected account.
 
     A block in either direction hides the posts, whatever the visibility: the
     one who blocked stops seeing the other too, not only the other way around.
@@ -49,7 +57,11 @@ def visible_to(
         )
         .exists()
     )
+    author_is_live = author_deleted_at.is_(None)
+    if keeps_deleted_author is not None:
+        author_is_live = or_(author_is_live, keeps_deleted_author)
     return and_(
+        author_is_live,
         not_(blocked_either_way),
         or_(
             author_visibility != "protected",

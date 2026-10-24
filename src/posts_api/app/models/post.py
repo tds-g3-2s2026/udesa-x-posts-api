@@ -65,5 +65,9 @@ class PostWithAuthor:
     retweeted_by: str | None = None
     retweeter_id: uuid.UUID | None = None
     activity_at: datetime | None = None
+    # The account behind the post is closed. Its handle comes back empty: only
+    # the replies of such an author are ever read, and they say who wrote them
+    # with this flag.
+    author_deleted: bool = False
     # Filled in after the page is read, with one extra query for all its posts.
     images: tuple[PostImage, ...] = ()

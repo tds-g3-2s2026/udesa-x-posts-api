@@ -14,6 +14,8 @@ El servicio queda en `http://localhost:8001`, con la documentación interactiva 
 Las rutas públicas cuelgan bajo el prefijo `/api` (por ejemplo `/api/users/{user_id}/follow`).
 Los endpoints de verificación `/healthcheck` y `/livez` quedan fuera del prefijo `/api`, sin autenticación.
 PostgreSQL y Redis usan los puertos 5433 y 6380 para no chocar con `udesa-x-users-api`.
+RabbitMQ queda en el 5672, con su pantalla de administración en `http://localhost:15672`
+(usuario y clave `posts`): ahí se ve la cola `posts-api` y su `posts-api.dlq`.
 En compose, las migraciones se aplican automáticamente (`alembic upgrade head`) antes de iniciar la API.
 
 Los tests, dentro de la misma imagen que se despliega:
@@ -78,11 +80,12 @@ sección "Despliegue continuo".
 avisa que una cuenta pasa a revisión por denuncias (ADR-011). La API valida estrictamente el
 issuer al verificar tokens recibidos. Copiar `secret.template.yaml` a `secret.yaml`,
 ignorado por git, y completar `DATABASE_URL` (con esquema `postgresql+asyncpg://`),
-`REDIS_URL`, `AUTH_REDIS_URL` (el Redis donde `users-api` escribe las revocaciones, ver
+`REDIS_URL`, `RABBITMQ_URL` (el RabbitMQ del que llegan los eventos, ver "Baja de cuentas"),
+`AUTH_REDIS_URL` (el Redis donde `users-api` escribe las revocaciones, ver
 "Revocación de sesiones"; en el cluster, `redis://redis:6379/0`), `JWT_PUBLIC_KEY` (clave
 pública Ed25519 en PEM) e `INTERNAL_API_TOKEN`, el secreto compartido con `users-api` para sus
 rutas internas, con el mismo valor en los dos servicios. En el despliegue, el pipeline arma el
-Secret con esos cinco GitHub Secrets del repositorio. No aplicar la plantilla vacía ni usar `kubectl apply -f k8s/` en un despliegue:
+Secret con esos GitHub Secrets del repositorio. No aplicar la plantilla vacía ni usar `kubectl apply -f k8s/` en un despliegue:
 incluiría esa plantilla.
 Las imágenes de los posts van a un bucket privado de S3. Se configuran con `S3_BUCKET`,
 `S3_REGION` (por defecto `us-east-1`) e `IMAGE_URL_EXPIRY_SECONDS` (por defecto `3600`, lo que
@@ -131,6 +134,36 @@ no pasa. Las claves y la regla son un contrato que mantiene `users-api`; cambiar
 cambiar la otra. En desarrollo, el `docker-compose` no incluye a `users-api`, así que nadie
 escribe marcas y no se revoca nada. En los tests, `AUTH_REDIS_URL` apunta a otra base que
 `REDIS_URL` (`/2`), porque los tests vacían esta última antes de cada caso.
+
+## Baja de cuentas
+
+Cuando `users-api` cierra una cuenta publica `user.deleted.v1` (contrato en
+`contracts/events/`). `posts-api` lo consume de la cola `posts-api`, ligada al exchange
+`udesa-x.events` por ese tipo, con la misma topología que `notifications-api`: cola `quorum` con
+`x-dead-letter-exchange: udesa-x.events.dlx`, `posts-api.dlq` como DLQ, ack manual y `prefetch`
+10. Un mensaje que no se puede leer va a la DLQ; un fallo de la base lo devuelve a la cola. El
+cliente es `aio-pika` (ADR-019) y, como `AUTH_REDIS_URL`, `RABBITMQ_URL` no tiene valor por
+omisión. Si el broker no está, el servicio arranca igual y vuelve a intentar cada 5 segundos.
+
+El manejador corre en una sola transacción y se puede repetir sin efecto: la cuenta queda con
+`user_profiles.deleted_at` (el `time` del evento) y
+
+- se borran sus seguimientos y solicitudes en los dos sentidos, y se corrigen los contadores de
+  seguidores y seguidos de las cuentas que tocaban;
+- se borran sus bloqueos, sus likes y sus retweets, con los contadores de los posts;
+- sus posts no se borran: salen de la vista. `visible_to` oculta a los autores con `deleted_at`,
+  así que el feed, el perfil y `GET /posts/{id}` no los devuelven. La excepción son las
+  respuestas, que se quedan para no romper los hilos y salen con `authorDeleted: true`, sin
+  handle, nombre ni avatar (`authorId` se mantiene);
+- la cuenta queda pública, para que la protección de una cuenta sin seguidores no esconda sus
+  respuestas;
+- `GET /users/{id}`, sus posts, sus seguidores y a quién sigue, y seguirla responden `404
+  user-not-found`, como una cuenta que no existe;
+- las imágenes de sus posts siguen en el bucket: borrarlas queda como mejora.
+
+El filtro está en la consulta y no depende de cuándo llegue el evento a una réplica: desde que
+el manejador commitea, nada la muestra. Antes del evento, lo que sí es inmediato es que sus
+tokens mueren por ADR-014.
 
 ## Estructura
 
