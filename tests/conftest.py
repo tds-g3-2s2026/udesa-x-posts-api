@@ -15,6 +15,16 @@ HAS_SERVICES = bool(os.getenv("DATABASE_URL") and os.getenv("REDIS_URL"))
 
 requires_services = pytest.mark.skipif(not HAS_SERVICES, reason="needs DATABASE_URL and REDIS_URL")
 
+# The broker the consumer tests talk to. The application itself is pointed at a
+# port nothing listens on (below), so that the consumer the app starts with each
+# test never takes the messages these tests publish.
+BROKER_URL = os.getenv("RABBITMQ_URL")
+os.environ["RABBITMQ_URL"] = "amqp://nobody:nobody@127.0.0.1:9/"
+
+requires_broker = pytest.mark.skipif(
+    not (HAS_SERVICES and BROKER_URL), reason="needs DATABASE_URL, REDIS_URL and RABBITMQ_URL"
+)
+
 
 @pytest.fixture(scope="session", autouse=True)
 def apply_migrations() -> None:
