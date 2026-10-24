@@ -40,6 +40,17 @@ class Settings(BaseSettings):
     post_rate_limit: int = 30
     post_rate_window_seconds: int = 3600
 
+    # Where the images of the posts are stored. Without a bucket the service
+    # still starts and serves everything else; publishing an image answers 503.
+    # The credentials are not settings: the AWS SDK finds them on its own, from
+    # the environment or the role the pod runs with.
+    s3_bucket: str | None = None
+    s3_region: str = "us-east-1"
+    # Only to point at a local S3-compatible server instead of AWS.
+    s3_endpoint_url: str | None = None
+    # How long the signed URL of an image keeps working.
+    image_url_expiry_seconds: int = 3600
+
     log_level: str = "INFO"
 
     # Telemetry leaves the pod only when this is set. The exporters read it, and

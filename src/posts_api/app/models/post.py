@@ -11,6 +11,15 @@ from datetime import datetime
 
 
 @dataclass(frozen=True)
+class PostImage:
+    """An image of a post, with the temporary URL it can be read from."""
+
+    id: uuid.UUID
+    url: str
+    position: int
+
+
+@dataclass(frozen=True)
 class Post:
     """A published post, with its counters at whatever they currently are.
 
@@ -26,6 +35,7 @@ class Post:
     retweets_count: int = 0
     replies_count: int = 0
     parent_id: uuid.UUID | None = None
+    images: tuple[PostImage, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -55,3 +65,5 @@ class PostWithAuthor:
     retweeted_by: str | None = None
     retweeter_id: uuid.UUID | None = None
     activity_at: datetime | None = None
+    # Filled in after the page is read, with one extra query for all its posts.
+    images: tuple[PostImage, ...] = ()

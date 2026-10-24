@@ -11,6 +11,7 @@ from posts_api.infrastructure.database.models import (
     FollowModel,
     FollowRequestModel,
     LikeModel,
+    PostMediaModel,
     PostModel,
     ReportModel,
     RetweetModel,
@@ -18,6 +19,7 @@ from posts_api.infrastructure.database.models import (
 )
 from posts_api.main import app
 from tests.conftest import issue_token
+from tests.fakes import FakeImageStorage
 
 
 @pytest.fixture
@@ -36,6 +38,8 @@ async def api():
             await session.execute(delete(BlockModel))
             await session.execute(delete(FollowRequestModel))
             await session.execute(delete(FollowModel))
+            # The images hang from the posts.
+            await session.execute(delete(PostMediaModel))
             # Before the profiles: both tables carry a foreign key to it.
             await session.execute(delete(PostModel))
             await session.execute(delete(UserProfileModel))
@@ -43,6 +47,9 @@ async def api():
         # The rate limit counters live outside PostgreSQL, so emptying the
         # tables is not enough to leave one test independent from the next.
         await app.state.redis.flushdb()
+        # No bucket exists to test against: the images go to this one, which the
+        # tests reach as `app.state.image_storage`.
+        app.state.image_storage = FakeImageStorage()
 
         transport = httpx.ASGITransport(app=app)
         # The prefix travels in the base URL so each test keeps writing the path
