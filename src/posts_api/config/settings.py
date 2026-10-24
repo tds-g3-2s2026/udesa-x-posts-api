@@ -25,6 +25,10 @@ class Settings(BaseSettings):
 
     jwt_issuer: str = "users-api"
 
+    # Where the events of users-api arrive from. No default: without it the
+    # accounts users-api closes would keep their posts in everybody's feed.
+    rabbitmq_url: str
+
     # ADR-011: where to ask users-api to put an account under review, and the
     # secret it checks on that internal route. No default for the secret, the
     # same as the database: a service that cannot authenticate the call would

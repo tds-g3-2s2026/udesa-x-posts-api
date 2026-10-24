@@ -151,6 +151,7 @@ def settings_with(**overrides) -> Settings:
         database_url="postgresql+asyncpg://x",
         redis_url="redis://x",
         auth_redis_url="redis://x",
+        rabbitmq_url="amqp://x",
         jwt_public_key="x",
         internal_api_token="x",
         _env_file=None,

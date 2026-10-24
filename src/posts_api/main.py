@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 from importlib.metadata import version
@@ -13,6 +15,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from posts_api.api.admin_posts import router as admin_posts_router
 from posts_api.api.blocks import router as blocks_router
 from posts_api.api.errors import problem_error_handler, validation_error_handler
+from posts_api.api.event_handlers import build_event_handler
 from posts_api.api.feed import router as feed_router
 from posts_api.api.follow_requests import router as follow_requests_router
 from posts_api.api.follows import router as follows_router
@@ -26,6 +29,7 @@ from posts_api.app.errors import ProblemError
 from posts_api.app.security import load_public_key
 from posts_api.config.settings import API_PREFIX, get_settings
 from posts_api.infrastructure.database.session import build_session_factory
+from posts_api.infrastructure.rabbitmq.event_consumer import EventConsumer
 from posts_api.infrastructure.s3.image_storage import build_image_storage
 from posts_api.infrastructure.telemetry import export, instrument
 from posts_api.infrastructure.users_api.account_review import build_users_api_client
@@ -61,9 +65,15 @@ async def lifespan(app: FastAPI):
     images = build_image_storage(settings)
     await images.start()
     app.state.image_storage = images
+    # A task of its own: the service answers requests while the broker is down.
+    consumer = EventConsumer(settings.rabbitmq_url, build_event_handler(app.state.session_factory))
+    consuming = asyncio.create_task(consumer.run())
 
     yield
 
+    consuming.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await consuming
     await images.aclose()
     await app.state.engine.dispose()
     await app.state.redis.aclose()
