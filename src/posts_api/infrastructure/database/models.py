@@ -56,6 +56,10 @@ class UserProfileModel(Base):
     followers_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     following_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
+    # When users-api closed the account, taken from the event. The row stays: posts
+    # and replies point at it. Whoever reads an author checks this column.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
 
 class FollowModel(Base):
     __tablename__ = "follows"
