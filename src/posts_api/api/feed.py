@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from posts_api.api.deps import CurrentUserDep, SessionDep
+from posts_api.api.deps import CurrentUserDep, PostImagesDep, SessionDep
 from posts_api.api.schemas.feed import FeedPostSummary
 from posts_api.api.schemas.pagination import CursorPage
 from posts_api.app.repositories.feed import FeedRepository
@@ -11,8 +11,8 @@ from posts_api.app.services.feed import FeedService
 router = APIRouter(prefix="/feed", tags=["feed"])
 
 
-def get_feed_service(session: SessionDep) -> FeedService:
-    return FeedService(FeedRepository(session))
+def get_feed_service(session: SessionDep, images: PostImagesDep) -> FeedService:
+    return FeedService(FeedRepository(session), images)
 
 
 ServiceDep = Annotated[FeedService, Depends(get_feed_service)]

@@ -5,6 +5,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from posts_api.api.schemas.images import PostImageSummary
 from posts_api.app.models.post import Post
 
 
@@ -24,6 +25,7 @@ class PostSummary(BaseModel):
     # A post that was just written has no likes, so this is always `false` here;
     # it is on the shape so every post a client reads says the same things.
     liked_by_me: bool = Field(default=False, serialization_alias="likedByMe")
+    images: list[PostImageSummary] = []
 
     @classmethod
     def of(cls, post: Post) -> "PostSummary":
@@ -36,6 +38,7 @@ class PostSummary(BaseModel):
             retweets_count=post.retweets_count,
             replies_count=post.replies_count,
             parent_id=post.parent_id,
+            images=[PostImageSummary.of(one) for one in post.images],
         )
 
 

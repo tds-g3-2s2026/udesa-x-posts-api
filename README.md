@@ -74,7 +74,7 @@ migraciones al arrancar. Qué hace paso por paso está en el README de `udesa-x-
 sección "Despliegue continuo".
 
 `configmap.yaml` define `LOG_LEVEL`, `FOLLOW_RATE_LIMIT`, `FOLLOW_RATE_WINDOW_SECONDS`,
-`JWT_ISSUER` (`users-api`) y `USERS_API_URL`, la dirección interna de `users-api` a la que se
+`JWT_ISSUER` (`users-api`), `S3_BUCKET` y `S3_REGION` (el bucket de las imágenes) y `USERS_API_URL`, la dirección interna de `users-api` a la que se
 avisa que una cuenta pasa a revisión por denuncias (ADR-011). La API valida estrictamente el
 issuer al verificar tokens recibidos. Copiar `secret.template.yaml` a `secret.yaml`,
 ignorado por git, y completar `DATABASE_URL` (con esquema `postgresql+asyncpg://`),
@@ -84,6 +84,16 @@ pública Ed25519 en PEM) e `INTERNAL_API_TOKEN`, el secreto compartido con `user
 rutas internas, con el mismo valor en los dos servicios. En el despliegue, el pipeline arma el
 Secret con esos cinco GitHub Secrets del repositorio. No aplicar la plantilla vacía ni usar `kubectl apply -f k8s/` en un despliegue:
 incluiría esa plantilla.
+Las imágenes de los posts van a un bucket privado de S3. Se configuran con `S3_BUCKET`,
+`S3_REGION` (por defecto `us-east-1`) e `IMAGE_URL_EXPIRY_SECONDS` (por defecto `3600`, lo que
+dura la URL firmada de lectura). Las credenciales no son variables del servicio: el SDK las toma
+del entorno. En el cluster llegan por el Secret (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` y
+`AWS_SESSION_TOKEN`, de un usuario de IAM con acceso al bucket) y son temporales: al vencer, subir
+imágenes falla con `503 images-unavailable` y las URLs de lectura dejan de abrir, hasta cargar
+otras credenciales y volver a desplegar. Lo
+recomendable a futuro es un rol de IAM asociado al pod, sin claves. Sin `S3_BUCKET` el servicio arranca y atiende todo lo demás, pero
+publicar un post con imágenes responde `503 images-unavailable`. `S3_ENDPOINT_URL` solo sirve
+para apuntar a un servidor compatible con S3 en desarrollo.
 `envFrom` se lee al crear el contenedor: el pipeline pone el hash del ConfigMap y del Secret
 en el pod template, así que un cambio solo de configuración también reemplaza los pods. La
 pública corresponde a la privada estable de users; los tokens antiguos sin `iss` se rechazan.

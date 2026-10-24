@@ -23,8 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.app.errors import ProblemError
 from posts_api.app.models.follow import Account, ProfileVisibility
+from posts_api.app.repositories.image_storage import ImageStorage
+from posts_api.app.repositories.post_media import PostMediaRepository
 from posts_api.app.repositories.revocations import RevocationStore
 from posts_api.app.security import decode_access_token
+from posts_api.app.services.post_images import PostImages
 from posts_api.infrastructure.database.session import session_scope
 from posts_api.infrastructure.redis.revocations import RedisRevocationStore
 
@@ -54,6 +57,22 @@ def get_users_api(request: Request) -> httpx.AsyncClient:
 
 
 UsersApiDep = Annotated[httpx.AsyncClient, Depends(get_users_api)]
+
+
+def get_image_storage(request: Request) -> ImageStorage:
+    """Where the image files live, opened once in the lifespan."""
+    return request.app.state.image_storage
+
+
+ImageStorageDep = Annotated[ImageStorage, Depends(get_image_storage)]
+
+
+def get_post_images(session: SessionDep, storage: ImageStorageDep) -> PostImages:
+    """What stores the images of a post and puts them back on the posts that are read."""
+    return PostImages(PostMediaRepository(session), storage)
+
+
+PostImagesDep = Annotated[PostImages, Depends(get_post_images)]
 
 
 def get_revocations(request: Request) -> RevocationStore:

@@ -17,7 +17,9 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    SmallInteger,
     String,
+    UniqueConstraint,
     func,
     text,
 )
@@ -256,4 +258,29 @@ class RetweetModel(Base):
     post_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True), ForeignKey("posts.id"), primary_key=True
     )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PostMediaModel(Base):
+    """One image attached to a post. The file itself lives in S3, under `s3_key`."""
+
+    __tablename__ = "post_media"
+    __table_args__ = (
+        CheckConstraint("position BETWEEN 0 AND 3", name="ck_post_media_position"),
+        # Caps a post at four images and keeps their order unambiguous. The index
+        # behind it leads with `post_id`, so it also serves the lookup that reads
+        # the images of a whole page of posts at once.
+        UniqueConstraint("post_id", "position", name="uq_post_media_post_position"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()")
+    )
+    post_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("posts.id")
+    )
+    position: Mapped[int] = mapped_column(SmallInteger)
+    s3_key: Mapped[str] = mapped_column(String(255))
+    mime_type: Mapped[str] = mapped_column(String(32))
+    size_bytes: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

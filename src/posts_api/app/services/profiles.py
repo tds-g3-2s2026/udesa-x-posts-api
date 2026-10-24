@@ -11,6 +11,7 @@ from posts_api.app.repositories.blocks import BlockRepository
 from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.profile_posts import ProfilePostRepository
 from posts_api.app.repositories.user_directory import UserDirectory, UserDirectoryUnavailableError
+from posts_api.app.services.post_images import PostImages
 
 
 def profile_not_found() -> ProblemError:
@@ -29,11 +30,13 @@ class ProfileService:
         blocks: BlockRepository,
         directory: UserDirectory,
         posts: ProfilePostRepository,
+        images: PostImages,
     ) -> None:
         self._follows = follows
         self._blocks = blocks
         self._directory = directory
         self._posts = posts
+        self._images = images
 
     async def profile_of(self, user_id: uuid.UUID, viewer: Account) -> Profile:
         """The header of `user_id`'s profile, as `viewer` gets to see it.
@@ -91,7 +94,8 @@ class ProfileService:
             )
 
         decoded = Cursor.decode(cursor) if cursor is not None else None
-        return await self._posts.by_author(user_id, viewer.id, cursor=decoded)
+        posts, next_cursor = await self._posts.by_author(user_id, viewer.id, cursor=decoded)
+        return await self._images.attach(posts), next_cursor
 
     async def _visible_target(self, user_id: uuid.UUID, viewer: Account) -> UserProfile:
         """The account behind the profile, or the 404 both endpoints share.

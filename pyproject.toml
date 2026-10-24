@@ -18,6 +18,8 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.66b0",
     "opentelemetry-instrumentation-logging>=0.66b0",
     "opentelemetry-instrumentation-httpx>=0.66b0",
+    "aioboto3>=15.5.0",
+    "python-multipart>=0.0.32",
 ]
 
 [dependency-groups]

@@ -10,7 +10,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from posts_api.api.deps import CurrentUserDep, SessionDep, UsersApiDep
+from posts_api.api.deps import CurrentUserDep, PostImagesDep, SessionDep, UsersApiDep
 from posts_api.api.schemas.feed import FeedPostSummary
 from posts_api.api.schemas.pagination import CursorPage
 from posts_api.api.schemas.profiles import ProfileSummary
@@ -29,13 +29,16 @@ def get_user_directory(users_api: UsersApiDep) -> UserDirectory:
 
 
 def get_profile_service(
-    session: SessionDep, directory: Annotated[UserDirectory, Depends(get_user_directory)]
+    session: SessionDep,
+    directory: Annotated[UserDirectory, Depends(get_user_directory)],
+    images: PostImagesDep,
 ) -> ProfileService:
     return ProfileService(
         FollowRepository(session),
         BlockRepository(session),
         directory,
         ProfilePostRepository(session),
+        images,
     )
 
 

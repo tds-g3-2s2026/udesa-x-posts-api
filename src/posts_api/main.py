@@ -26,6 +26,7 @@ from posts_api.app.errors import ProblemError
 from posts_api.app.security import load_public_key
 from posts_api.config.settings import API_PREFIX, get_settings
 from posts_api.infrastructure.database.session import build_session_factory
+from posts_api.infrastructure.s3.image_storage import build_image_storage
 from posts_api.infrastructure.telemetry import export, instrument
 from posts_api.infrastructure.users_api.account_review import build_users_api_client
 
@@ -57,9 +58,13 @@ async def lifespan(app: FastAPI):
     )
     # Its calls carry the request's trace, so users-api joins it.
     HTTPXClientInstrumentor.instrument_client(app.state.users_api, tracer_provider=tracer_provider)
+    images = build_image_storage(settings)
+    await images.start()
+    app.state.image_storage = images
 
     yield
 
+    await images.aclose()
     await app.state.engine.dispose()
     await app.state.redis.aclose()
     await app.state.auth_redis.aclose()
