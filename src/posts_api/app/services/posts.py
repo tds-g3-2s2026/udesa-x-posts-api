@@ -7,9 +7,21 @@ rules can be read, tested and defended without starting the application.
 
 import re
 import uuid
+from collections.abc import Sequence
+from dataclasses import replace
 from datetime import datetime
 
 from posts_api.app.errors import ProblemError
+from posts_api.app.image_rules import (
+    MAX_IMAGE_BYTES,
+    MAX_IMAGES,
+    ImageFormat,
+    IncomingImage,
+    detect_format,
+    image_format_not_supported,
+    image_too_large,
+    too_many_images,
+)
 from posts_api.app.models.follow import Account
 from posts_api.app.models.post import Post, PostWithAuthor
 from posts_api.app.pagination import Cursor
@@ -18,6 +30,7 @@ from posts_api.app.repositories.likes import LikeRepository
 from posts_api.app.repositories.posts import PostRepository
 from posts_api.app.repositories.rate_limiter import RateLimiter
 from posts_api.app.repositories.retweets import RetweetRepository
+from posts_api.app.services.post_images import PostImages
 
 MAX_CONTENT_LENGTH = 280
 
@@ -65,20 +78,36 @@ class PostService:
         rate_limiter: RateLimiter,
         likes: LikeRepository,
         retweets: RetweetRepository,
+        images: PostImages,
         *,
         post_limit: int,
         window_seconds: int,
     ) -> None:
         self._likes = likes
         self._retweets = retweets
+        self._images = images
         self._posts = posts
         self._follows = follows
         self._rate_limiter = rate_limiter
         self._post_limit = post_limit
         self._window_seconds = window_seconds
 
+    async def charge(self, author: Account) -> None:
+        """Count a publishing attempt before the request body is read.
+
+        For the caller that has to read a large body first: it charges here,
+        then passes `charged=True` to `create` so the attempt counts once.
+        """
+        await self._charge_the_rate_limit(author.id)
+
     async def create(
-        self, author: Account, content: str, *, parent_id: uuid.UUID | None = None
+        self,
+        author: Account,
+        content: str,
+        *,
+        parent_id: uuid.UUID | None = None,
+        images: Sequence[IncomingImage] = (),
+        charged: bool = False,
     ) -> Post:
         """Publish a post, or refuse it and say exactly which rule stopped it.
 
@@ -86,7 +115,8 @@ class PostService:
         rate limit counter: answering is publishing, and a second counter would
         let somebody double their quota by alternating the two.
         """
-        await self._charge_the_rate_limit(author.id)
+        if not charged:
+            await self._charge_the_rate_limit(author.id)
         await self._follows.ensure_profile(author)
 
         # Measured after stripping tags, not before: the length limit caps the
@@ -94,7 +124,8 @@ class PostService:
         # count past it was never part of the text to begin with.
         sanitized = _strip_tags(content).strip()
 
-        if not sanitized:
+        # Images stand in for the text: a post may be only pictures.
+        if not sanitized and not images:
             raise ProblemError(
                 status=422,
                 code="post-is-blank",
@@ -109,8 +140,13 @@ class PostService:
                 detail=f"El post no puede superar los {MAX_CONTENT_LENGTH} caracteres",
             )
 
+        formats = self._formats_of(images)
+
         if parent_id is None:
-            return await self._posts.create(author.id, sanitized)
+            post = await self._posts.create(author.id, sanitized)
+            if not images:
+                return post
+            return replace(post, images=await self._images.save(post.id, images, formats))
 
         # The parent is looked up as the author, with the visibility rule on:
         # one they cannot read is answered exactly like one that does not exist.
@@ -128,6 +164,21 @@ class PostService:
         # Same transaction as the insert: either both land or neither does.
         await self._posts.count_reply(parent_id)
         return reply
+
+    @staticmethod
+    def _formats_of(images: Sequence[IncomingImage]) -> list[ImageFormat]:
+        """What each file really is, or the error for the first one that breaks a rule."""
+        if len(images) > MAX_IMAGES:
+            raise too_many_images()
+        formats = []
+        for image in images:
+            if image.size > MAX_IMAGE_BYTES:
+                raise image_too_large()
+            kind = detect_format(image.header())
+            if kind is None:
+                raise image_format_not_supported()
+            formats.append(kind)
+        return formats
 
     async def delete(self, post_id: uuid.UUID, viewer: Account) -> None:
         post = await self._posts.lock_visible(post_id, viewer_id=viewer.id)
@@ -154,7 +205,8 @@ class PostService:
         would confirm that a protected account's post exists, which is exactly
         what the visibility rule exists to keep from leaking.
         """
-        return await self._visible_post(post_id, viewer.id)
+        post = await self._visible_post(post_id, viewer.id)
+        return (await self._images.attach([post]))[0]
 
     async def replies_to(
         self, post_id: uuid.UUID, viewer: Account, *, cursor: str | None = None
@@ -166,7 +218,10 @@ class PostService:
         """
         await self._visible_post(post_id, viewer.id)
         decoded = Cursor.decode(cursor) if cursor is not None else None
-        return await self._posts.replies_to(post_id, viewer_id=viewer.id, cursor=decoded)
+        replies, next_cursor = await self._posts.replies_to(
+            post_id, viewer_id=viewer.id, cursor=decoded
+        )
+        return await self._images.attach(replies), next_cursor
 
     async def _visible_post(self, post_id: uuid.UUID, viewer_id: uuid.UUID) -> PostWithAuthor:
         post = await self._posts.find_visible(post_id, viewer_id=viewer_id, include_deleted=True)

@@ -10,6 +10,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from posts_api.api.schemas.images import PostImageSummary
 from posts_api.app.models.post import PostWithAuthor
 
 
@@ -36,6 +37,9 @@ class FeedPostSummary(BaseModel):
     retweeted_by: str | None = Field(default=None, serialization_alias="retweetedBy")
     entry_id: str = Field(serialization_alias="entryId")
     activity_at: datetime = Field(serialization_alias="activityAt")
+    # Ordered by position; empty for a post with no images and for a deleted one.
+    # A retweet carries the images of the post it shares.
+    images: list[PostImageSummary] = []
 
     @classmethod
     def of(cls, post: PostWithAuthor) -> "FeedPostSummary":
@@ -57,4 +61,5 @@ class FeedPostSummary(BaseModel):
             replies_count=post.replies_count,
             parent_id=post.parent_id,
             liked_by_me=post.liked_by_me,
+            images=[PostImageSummary.of(one) for one in post.images],
         )

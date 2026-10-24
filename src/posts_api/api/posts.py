@@ -1,9 +1,13 @@
+import json
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 
-from posts_api.api.deps import CurrentUserDep, RedisDep, SessionDep
+from posts_api.api.deps import CurrentUserDep, PostImagesDep, RedisDep, SessionDep
+from posts_api.api.multipart import is_multipart, read_post_form
 from posts_api.api.schemas.feed import FeedPostSummary
 from posts_api.api.schemas.pagination import CursorPage
 from posts_api.api.schemas.posts import CreatePostRequest, PostSummary
@@ -18,8 +22,8 @@ from posts_api.infrastructure.redis.rate_limiter import RedisRateLimiter
 router = APIRouter(prefix="/posts", tags=["posts"])
 
 
-def get_post_service(session: SessionDep, redis: RedisDep) -> PostService:
-    """Where the service gets its collaborators: PostgreSQL and Redis."""
+def get_post_service(session: SessionDep, redis: RedisDep, images: PostImagesDep) -> PostService:
+    """Where the service gets its collaborators: PostgreSQL, Redis and the image storage."""
     settings = get_settings()
     return PostService(
         PostRepository(session),
@@ -27,6 +31,7 @@ def get_post_service(session: SessionDep, redis: RedisDep) -> PostService:
         RedisRateLimiter(redis),
         LikeRepository(session),
         RetweetRepository(session),
+        images,
         post_limit=settings.post_rate_limit,
         window_seconds=settings.post_rate_window_seconds,
     )
@@ -35,12 +40,51 @@ def get_post_service(session: SessionDep, redis: RedisDep) -> PostService:
 ServiceDep = Annotated[PostService, Depends(get_post_service)]
 
 
+async def read_json_body(request: Request) -> CreatePostRequest:
+    """The JSON body, failing the way FastAPI does when it validates one itself.
+
+    Read by hand because this one route takes two kinds of body and FastAPI
+    can only declare one; the errors keep the shape the declared body gave.
+    """
+    raw = await request.body()
+    if not raw:
+        raise RequestValidationError(
+            [{"type": "missing", "loc": ("body",), "msg": "Field required"}]
+        )
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RequestValidationError(
+            [{"type": "json_invalid", "loc": ("body", exc.pos), "msg": "JSON decode error"}]
+        ) from exc
+    try:
+        return CreatePostRequest.model_validate(data)
+    except ValidationError as exc:
+        raise RequestValidationError(
+            [{**error, "loc": ("body", *error["loc"])} for error in exc.errors()]
+        ) from exc
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_post(
-    body: CreatePostRequest, current_user: CurrentUserDep, service: ServiceDep
+    request: Request, current_user: CurrentUserDep, service: ServiceDep
 ) -> PostSummary:
-    """Publish a post. The author comes from the token, never from the body."""
-    post = await service.create(current_user, body.content)
+    """Publish a post, as JSON or as `multipart/form-data` with up to four images.
+
+    The author comes from the token, never from the body.
+    """
+    if not is_multipart(request.headers.get("content-type")):
+        body = await read_json_body(request)
+        return PostSummary.of(await service.create(current_user, body.content))
+
+    # Charged before the body is read: a client that is over its limit does not
+    # get to make the server receive its files first.
+    await service.charge(current_user)
+    form = await read_post_form(request)
+    try:
+        post = await service.create(current_user, form.content, images=form.images, charged=True)
+    finally:
+        form.close()
     return PostSummary.of(post)
 
 
