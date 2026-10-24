@@ -23,6 +23,10 @@ class FeedPostSummary(BaseModel):
     # not missing, so the screen can read the final shape today.
     author_display_name: str | None = Field(default=None, serialization_alias="authorDisplayName")
     author_avatar_url: str | None = Field(default=None, serialization_alias="authorAvatarUrl")
+    # The account that wrote it was closed. The handle, the name and the avatar
+    # are then null and `authorId` stays, but opening it answers 404: the screen
+    # shows "[Usuario eliminado]" and does not navigate to the profile.
+    author_deleted: bool = Field(default=False, serialization_alias="authorDeleted")
     content: str | None
     deleted: bool
     created_at: datetime = Field(serialization_alias="createdAt")
@@ -53,6 +57,7 @@ class FeedPostSummary(BaseModel):
             id=post.id,
             author_id=post.author_id,
             author_handle=post.author_handle,
+            author_deleted=post.author_deleted,
             content=post.content,
             deleted=post.deleted,
             created_at=post.created_at,

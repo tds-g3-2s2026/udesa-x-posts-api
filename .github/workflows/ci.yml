@@ -11,6 +11,9 @@ jobs:
       # ARQUITECTURA.md turns the gate on for the backend services in S3. Below
       # the minimum the PR goes red and cannot be merged.
       bloquear-por-cobertura: true
+      # RabbitMQ for the suite and for the production image: the consumer tests
+      # run against a real broker.
+      rabbitmq: true
 
   # Only a commit on main that passed CI reaches the cluster. The pipeline and
   # what it applies are documented in udesa-x-platform, "Despliegue continuo".
@@ -24,5 +27,5 @@ jobs:
       id-token: write
     with:
       servicio: posts-api
-      secretos: DATABASE_URL REDIS_URL AUTH_REDIS_URL JWT_PUBLIC_KEY INTERNAL_API_TOKEN OTEL_EXPORTER_OTLP_HEADERS AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+      secretos: DATABASE_URL REDIS_URL RABBITMQ_URL AUTH_REDIS_URL JWT_PUBLIC_KEY INTERNAL_API_TOKEN OTEL_EXPORTER_OTLP_HEADERS AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
       migracion: alembic upgrade head

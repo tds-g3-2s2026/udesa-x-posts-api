@@ -33,12 +33,18 @@ def _to_post(row: PostModel) -> Post:
 
 
 def _to_post_with_author(
-    post: PostModel, handle: str | None, liked: bool, retweeted: bool
+    post: PostModel,
+    handle: str | None,
+    author_deleted_at: datetime | None,
+    liked: bool,
+    retweeted: bool,
 ) -> PostWithAuthor:
     return PostWithAuthor(
         id=post.id,
         author_id=post.author_id,
-        author_handle=handle,
+        # A closed account does not keep its handle on what it left behind.
+        author_handle=None if author_deleted_at else handle,
+        author_deleted=author_deleted_at is not None,
         content=None if post.deleted_at else post.content,
         deleted=post.deleted_at is not None,
         created_at=post.created_at,
@@ -82,7 +88,13 @@ class PostRepository:
         requests aimed at somebody else.
         """
         found = await self._session.execute(
-            select(PostModel, UserProfileModel.handle, liked_by(viewer_id), retweeted_by(viewer_id))
+            select(
+                PostModel,
+                UserProfileModel.handle,
+                UserProfileModel.deleted_at,
+                liked_by(viewer_id),
+                retweeted_by(viewer_id),
+            )
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
             .where(
                 PostModel.id == post_id,
@@ -91,14 +103,16 @@ class PostRepository:
                     viewer_id,
                     author_id=PostModel.author_id,
                     author_visibility=UserProfileModel.visibility,
+                    author_deleted_at=UserProfileModel.deleted_at,
+                    keeps_deleted_author=PostModel.parent_id.is_not(None),
                 ),
             )
         )
         row = found.first()
         if row is None:
             return None
-        post, handle, liked, retweeted = row
-        return _to_post_with_author(post, handle, liked, retweeted)
+        post, handle, author_deleted_at, liked, retweeted = row
+        return _to_post_with_author(post, handle, author_deleted_at, liked, retweeted)
 
     async def lock_visible(
         self, post_id: uuid.UUID, *, viewer_id: uuid.UUID
@@ -145,7 +159,13 @@ class PostRepository:
         not come back just because it hangs from a post they can read.
         """
         base = (
-            select(PostModel, UserProfileModel.handle, liked_by(viewer_id), retweeted_by(viewer_id))
+            select(
+                PostModel,
+                UserProfileModel.handle,
+                UserProfileModel.deleted_at,
+                liked_by(viewer_id),
+                retweeted_by(viewer_id),
+            )
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
             .where(
                 PostModel.parent_id == post_id,
@@ -153,6 +173,9 @@ class PostRepository:
                     viewer_id,
                     author_id=PostModel.author_id,
                     author_visibility=UserProfileModel.visibility,
+                    author_deleted_at=UserProfileModel.deleted_at,
+                    # Every row here is a reply: the ones of a closed account stay.
+                    keeps_deleted_author=PostModel.parent_id.is_not(None),
                 ),
             )
         )
@@ -166,8 +189,8 @@ class PostRepository:
         )
         found = await self._session.execute(statement)
         replies = [
-            _to_post_with_author(post, handle, liked, retweeted)
-            for post, handle, liked, retweeted in found.all()
+            _to_post_with_author(post, handle, author_deleted_at, liked, retweeted)
+            for post, handle, author_deleted_at, liked, retweeted in found.all()
         ]
         return page_of(
             replies, limit=limit, at=lambda one: one.created_at, tiebreak=lambda one: one.id

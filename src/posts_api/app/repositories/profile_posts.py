@@ -46,6 +46,7 @@ class ProfilePostRepository:
                     viewer_id,
                     author_id=PostModel.author_id,
                     author_visibility=UserProfileModel.visibility,
+                    author_deleted_at=UserProfileModel.deleted_at,
                 ),
             )
         )
