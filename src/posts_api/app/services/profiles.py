@@ -3,10 +3,10 @@
 import uuid
 
 from posts_api.app.errors import ProblemError
+from posts_api.app.feed_pagination import FeedCursor
 from posts_api.app.models.follow import Account, ProfileVisibility, UserProfile
 from posts_api.app.models.post import PostWithAuthor
 from posts_api.app.models.profile import Profile
-from posts_api.app.pagination import Cursor
 from posts_api.app.repositories.blocks import BlockRepository
 from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.profile_posts import ProfilePostRepository
@@ -73,7 +73,11 @@ class ProfileService:
     async def posts_of(
         self, user_id: uuid.UUID, viewer: Account, *, cursor: str | None = None
     ) -> tuple[list[PostWithAuthor], str | None]:
-        """One page of `user_id`'s posts, newest first.
+        """One page of `user_id`'s posts and retweets, most recent activity first.
+
+        Paged with the feed's activity cursor: the same post can come twice,
+        once as written and once as retweeted, and a plain date cursor would
+        skip or repeat one of them.
 
         A protected account the viewer does not follow answers 403 and not an
         empty page: the screen has to say the account is private, not that it
@@ -93,7 +97,7 @@ class ProfileService:
                 detail="Esta cuenta es protegida y no la seguís",
             )
 
-        decoded = Cursor.decode(cursor) if cursor is not None else None
+        decoded = FeedCursor.decode(cursor) if cursor is not None else None
         posts, next_cursor = await self._posts.by_author(user_id, viewer.id, cursor=decoded)
         return await self._images.attach(posts), next_cursor
 
