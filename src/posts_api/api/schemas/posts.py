@@ -44,3 +44,10 @@ class PostSummary(BaseModel):
 
 class PostMetrics(BaseModel):
     published: int
+
+
+class AccountCountsSummary(BaseModel):
+    """The two numbers the backoffice detail of an account takes from here."""
+
+    followers: int
+    posts: int
