@@ -1,12 +1,29 @@
 """Everything reporting reads and writes in PostgreSQL."""
 
 import uuid
+from dataclasses import dataclass
+from datetime import datetime
 
-from sqlalchemy import distinct, func, select
+from sqlalchemy import distinct, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.app.models.report import Report, ReportReason
-from posts_api.infrastructure.database.models import ReportModel
+from posts_api.app.pagination import DEFAULT_PAGE_SIZE, CountCursor
+from posts_api.infrastructure.database.models import ReportModel, UserProfileModel
+
+PENDING = "pending"
+
+
+@dataclass(frozen=True)
+class ReportCase:
+    """One reported account in the backoffice inbox, with what is still pending about it."""
+
+    user_id: uuid.UUID
+    handle: str | None
+    distinct_reporters: int
+    reports: int
+    last_reported_at: datetime
+    reasons: tuple[ReportReason, ...]
 
 
 class ReportRepository:
@@ -51,3 +68,61 @@ class ReportRepository:
             )
         )
         return found.scalar_one()
+
+    async def pending_cases(
+        self, *, cursor: CountCursor | None = None, limit: int = DEFAULT_PAGE_SIZE
+    ) -> tuple[list[ReportCase], str | None]:
+        """One case per account with pending reports, most different reporters first.
+
+        Ties go to the account reported most recently, and then to the id, so
+        the order is total and the cursor neither repeats nor skips a case.
+        Accounts users-api already closed are left out: there is nothing left
+        to decide about them.
+        """
+        reporters = func.count(distinct(ReportModel.reporter_id))
+        last_reported_at = func.max(ReportModel.created_at)
+        statement = (
+            select(
+                ReportModel.target_id,
+                UserProfileModel.handle,
+                reporters,
+                func.count(),
+                last_reported_at,
+                func.array_agg(distinct(ReportModel.reason)),
+            )
+            .join(UserProfileModel, UserProfileModel.id == ReportModel.target_id)
+            .where(ReportModel.status == PENDING, UserProfileModel.deleted_at.is_(None))
+            .group_by(ReportModel.target_id, UserProfileModel.handle)
+        )
+        if cursor is not None:
+            # In HAVING and not in WHERE: what the cursor remembers are counts
+            # over the group, not columns of a row.
+            statement = statement.having(
+                tuple_(reporters, last_reported_at, ReportModel.target_id)
+                < tuple_(cursor.count, cursor.at, cursor.tiebreak)
+            )
+        statement = statement.order_by(
+            reporters.desc(), last_reported_at.desc(), ReportModel.target_id.desc()
+        ).limit(limit + 1)
+
+        found = await self._session.execute(statement)
+        cases = [
+            ReportCase(
+                user_id=target_id,
+                handle=handle,
+                distinct_reporters=distinct_reporters,
+                reports=reports,
+                last_reported_at=last_at,
+                reasons=tuple(sorted(ReportReason(reason) for reason in reasons)),
+            )
+            for target_id, handle, distinct_reporters, reports, last_at, reasons in found.all()
+        ]
+        # One past the page was asked for: getting it back is what says there
+        # is a next one, the same as `page_of`.
+        page = cases[:limit]
+        if len(cases) <= limit:
+            return page, None
+        last = page[-1]
+        return page, CountCursor(
+            count=last.distinct_reporters, at=last.last_reported_at, tiebreak=last.user_id
+        ).encode()

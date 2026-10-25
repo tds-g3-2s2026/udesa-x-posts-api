@@ -7,6 +7,7 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from posts_api.app.models.report import Report, ReportReason
+from posts_api.app.repositories.reports import ReportCase
 
 
 class CreateReportRequest(BaseModel):
@@ -42,4 +43,28 @@ class ReportSummary(BaseModel):
             post_id=report.post_id,
             reason=report.reason,
             created_at=report.created_at,
+        )
+
+
+class ReportCaseSummary(BaseModel):
+    """One account of the backoffice inbox (E5-H7)."""
+
+    user_id: uuid.UUID = Field(serialization_alias="userId")
+    handle: str | None
+    # Different people who reported it: what orders the inbox.
+    distinct_reporters: int = Field(serialization_alias="distinctReporters")
+    # Pending reports, counting the same person once per day it reported.
+    reports: int
+    last_reported_at: datetime = Field(serialization_alias="lastReportedAt")
+    reasons: list[ReportReason]
+
+    @classmethod
+    def of(cls, case: ReportCase) -> "ReportCaseSummary":
+        return cls(
+            user_id=case.user_id,
+            handle=case.handle,
+            distinct_reporters=case.distinct_reporters,
+            reports=case.reports,
+            last_reported_at=case.last_reported_at,
+            reasons=list(case.reasons),
         )
