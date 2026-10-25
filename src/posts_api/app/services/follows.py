@@ -6,12 +6,15 @@ rules can be read, tested and defended without starting the application.
 """
 
 import uuid
+from datetime import UTC, datetime
 
+from posts_api.app import events
 from posts_api.app.errors import ProblemError
 from posts_api.app.models.follow import Account, FollowRequest
 from posts_api.app.repositories.blocks import BlockRepository
 from posts_api.app.repositories.follow_requests import FollowRequestRepository
 from posts_api.app.repositories.follows import FollowRepository
+from posts_api.app.repositories.outbox import OutboxRepository
 from posts_api.app.repositories.rate_limiter import RateLimiter
 
 # Its own prefix so the counter cannot collide with another one on the same Redis.
@@ -25,6 +28,7 @@ class FollowService:
         requests: FollowRequestRepository,
         blocks: BlockRepository,
         rate_limiter: RateLimiter,
+        outbox: OutboxRepository,
         *,
         follow_limit: int,
         window_seconds: int,
@@ -33,6 +37,7 @@ class FollowService:
         self._requests = requests
         self._blocks = blocks
         self._rate_limiter = rate_limiter
+        self._outbox = outbox
         self._follow_limit = follow_limit
         self._window_seconds = window_seconds
 
@@ -59,7 +64,7 @@ class FollowService:
 
         await self._charge_the_rate_limit(follower_id)
 
-        await self._repository.ensure_profile(follower)
+        follower_profile = await self._repository.ensure_profile(follower)
         target = await self._repository.find_profile(followee_id)
         if target is None:
             raise ProblemError(
@@ -101,10 +106,19 @@ class FollowService:
                 return open_already
             return await self._requests.open(follower_id, followee_id)
 
-        # Both in the same session, so the same transaction carries the
-        # relationship and the counters: either the two land or neither does.
+        # The same session carries the relationship, the counters and the event:
+        # either the three land or none does, so nobody is told about a follow
+        # that does not exist.
         await self._repository.add_follow(follower_id, followee_id)
         await self._repository.move_counters(follower_id, followee_id, by=1)
+        await self._outbox.add(
+            events.follow_created(
+                follower_id,
+                followee_id,
+                follower_handle=follower_profile.handle,
+                now=datetime.now(UTC),
+            )
+        )
         return None
 
     async def unfollow(self, follower: Account, followee_id: uuid.UUID) -> None:

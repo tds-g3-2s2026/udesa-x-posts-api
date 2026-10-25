@@ -92,13 +92,27 @@ class NeverLimited:
         return 0
 
 
+class InMemoryOutbox:
+    def __init__(self) -> None:
+        self.events = []
+
+    async def add(self, event) -> None:
+        self.events.append(event)
+
+
 def block_service(follows, requests=None, blocks=None) -> BlockService:
     return BlockService(blocks or InMemoryBlocks(), follows, requests or InMemoryRequests())
 
 
 def follow_service(follows, blocks) -> FollowService:
     return FollowService(
-        follows, InMemoryRequests(), blocks, NeverLimited(), follow_limit=50, window_seconds=3600
+        follows,
+        InMemoryRequests(),
+        blocks,
+        NeverLimited(),
+        InMemoryOutbox(),
+        follow_limit=50,
+        window_seconds=3600,
     )
 
 

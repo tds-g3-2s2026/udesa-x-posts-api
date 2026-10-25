@@ -1,18 +1,27 @@
 """The rules of the requests that a protected account receives."""
 
 import uuid
+from datetime import UTC, datetime
 
+from posts_api.app import events
 from posts_api.app.errors import ProblemError
 from posts_api.app.models.follow import Account, FollowRequestStatus, PendingFollowRequest
 from posts_api.app.pagination import DEFAULT_PAGE_SIZE, Cursor
 from posts_api.app.repositories.follow_requests import FollowRequestRepository
 from posts_api.app.repositories.follows import FollowRepository
+from posts_api.app.repositories.outbox import OutboxRepository
 
 
 class FollowRequestService:
-    def __init__(self, requests: FollowRequestRepository, follows: FollowRepository) -> None:
+    def __init__(
+        self,
+        requests: FollowRequestRepository,
+        follows: FollowRepository,
+        outbox: OutboxRepository,
+    ) -> None:
         self._requests = requests
         self._follows = follows
+        self._outbox = outbox
 
     async def pending_for(
         self, owner: Account, *, cursor: str | None = None
@@ -36,15 +45,26 @@ class FollowRequestService:
     async def approve(self, owner: Account, request_id: uuid.UUID) -> None:
         """Answer yes: the relationship is established and the counters move.
 
-        The three writes share the session of the request, so they are one
-        transaction. A failure halfway cannot leave a request marked as approved
-        with nobody following, which is the kind of lie nothing would detect
-        afterwards.
+        The writes and the event share the session of the request, so they are
+        one transaction. A failure halfway cannot leave a request marked as
+        approved with nobody following, which is the kind of lie nothing would
+        detect afterwards, nor announce a follow that never happened.
         """
         request = await self._required(owner, request_id)
         await self._requests.resolve(request_id, FollowRequestStatus.APPROVED)
         await self._follows.add_follow(request.requester_id, owner.id)
         await self._follows.move_counters(request.requester_id, owner.id, by=1)
+        # The same event as a direct follow: for whoever is followed, a request
+        # they approved is a new follower like any other.
+        requester = await self._follows.find_profile(request.requester_id)
+        await self._outbox.add(
+            events.follow_created(
+                request.requester_id,
+                owner.id,
+                follower_handle=requester.handle if requester is not None else None,
+                now=datetime.now(UTC),
+            )
+        )
 
     async def reject(self, owner: Account, request_id: uuid.UUID) -> None:
         """Answer no: the request is closed and nothing else changes."""

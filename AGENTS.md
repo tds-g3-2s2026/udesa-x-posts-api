@@ -55,9 +55,13 @@ uv run pytest --cov=src --cov-report=term              # + tests/integration, re
 - `api/deps.py` arma las dependencias de cada request, pero no es el único lugar: algunas
   rutas (`api/follows.py`, `api/posts.py`, `api/reports.py`) importan implementaciones de
   `infrastructure/` directamente. Es la misma deuda del punto anterior.
-- Migraciones: `0001_esquema_actual`, `0002_bloqueos`, `0002b_tabla_de_posts`,
-  `0003_denuncias`. **Una migración ya aplicada en producción no se edita**, se agrega una
-  nueva (es la lección detrás de la `0002b`).
+- Migraciones: de `0001_esquema_actual` a `0010_outbox`, con `0002b_tabla_de_posts` en el
+  medio. **Una migración ya aplicada en producción no se edita**, se agrega una nueva (es la
+  lección detrás de la `0002b`).
+- Los eventos que publica el servicio van por el outbox transaccional, como en `users-api`:
+  el servicio llama a `OutboxRepository.add` con la sesión del request, en la misma
+  transacción que el cambio, y `infrastructure/rabbitmq/outbox_publisher.py` los publica.
+  Nunca publicar directo al broker desde un request.
 - `AUTH_REDIS_URL` es obligatoria: el servicio no arranca sin ella (ADR-014). Es de solo
   lectura; nunca escribir ni borrar claves ahí.
 - Tests en `tests/unit/` y `tests/integration/`. Identificadores de historia
