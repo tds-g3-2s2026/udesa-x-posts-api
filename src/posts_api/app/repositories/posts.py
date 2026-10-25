@@ -77,6 +77,14 @@ class PostRepository:
             select(func.count()).select_from(PostModel).where(PostModel.created_at >= since)
         )
 
+    async def count_by_author(self, author_id: uuid.UUID) -> int:
+        """The author's posts that were not deleted, replies included."""
+        return await self._session.scalar(
+            select(func.count())
+            .select_from(PostModel)
+            .where(PostModel.author_id == author_id, PostModel.deleted_at.is_(None))
+        )
+
     async def find_visible(
         self, post_id: uuid.UUID, *, viewer_id: uuid.UUID, include_deleted: bool = False
     ) -> PostWithAuthor | None:
