@@ -1,4 +1,5 @@
-"""Putting an account under review by calling users-api, as ADR-011 decides.
+"""Putting an account under review by calling users-api, as ADR-011 decides, and
+lifting it once the backoffice closes its case (ADR-020).
 
 The route is internal: it hangs outside `/api`, so neither the Ingress nor the
 gateway ever reach it, and it still asks for the shared secret in case a route
@@ -12,7 +13,11 @@ from dataclasses import dataclass
 
 import httpx
 
-from posts_api.app.repositories.account_review import AccountReview
+from posts_api.app.repositories.account_review import (
+    AccountReview,
+    ReviewRelease,
+    ReviewReleaseUnavailableError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +30,7 @@ BACKOFF_SECONDS = 0.2
 
 
 @dataclass
-class HttpAccountReview(AccountReview):
+class HttpAccountReview(AccountReview, ReviewRelease):
     # Opened once in the lifespan with the base URL, the timeout and the
     # secret already set, the same as the Redis connection.
     client: httpx.AsyncClient
@@ -43,6 +48,23 @@ class HttpAccountReview(AccountReview):
                 # Logged and swallowed: the report is already stored, and the
                 # next one aimed at this account asks again.
                 logger.warning("users-api did not put account %s under review: %r", user_id, exc)
+
+    async def lift_review(self, user_id: uuid.UUID) -> None:
+        for attempt in range(1, ATTEMPTS + 1):
+            try:
+                response = await self.client.delete(f"/internal/users/{user_id}/review")
+                if response.status_code == 404:
+                    # users-api no longer has the account: no review left to lift.
+                    return
+                response.raise_for_status()
+                return
+            except httpx.HTTPError as exc:
+                if attempt < ATTEMPTS:
+                    await asyncio.sleep(BACKOFF_SECONDS * attempt)
+                    continue
+                # Raised and not swallowed: unlike the review, nothing comes
+                # later to ask again, so the case has to stay open.
+                raise ReviewReleaseUnavailableError(str(user_id)) from exc
 
 
 def build_users_api_client(
