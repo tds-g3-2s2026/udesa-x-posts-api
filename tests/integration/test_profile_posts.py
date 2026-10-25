@@ -3,11 +3,18 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import update
+
 from posts_api.app.pagination import DEFAULT_PAGE_SIZE
-from posts_api.infrastructure.database.models import FollowModel, PostModel
+from posts_api.infrastructure.database.models import (
+    FollowModel,
+    PostModel,
+    RetweetModel,
+    UserProfileModel,
+)
 from posts_api.main import app
 from tests.conftest import requires_services
-from tests.integration.conftest import given_a_profile, signed_in_as
+from tests.integration.conftest import given_a_profile, handle_of, signed_in_as
 
 pytestmark = requires_services
 
@@ -34,6 +41,31 @@ async def insert_follow(follower_id: uuid.UUID, followee_id: uuid.UUID) -> None:
     """An approved follow, as a protected account leaves it after accepting."""
     async with app.state.session_factory() as session:
         session.add(FollowModel(follower_id=follower_id, followee_id=followee_id))
+        await session.commit()
+
+
+async def insert_retweet(user_id: uuid.UUID, post_id: uuid.UUID, created_at: datetime) -> None:
+    """Straight into the table, with the moment it was shared under control."""
+    async with app.state.session_factory() as session:
+        session.add(RetweetModel(user_id=user_id, post_id=post_id, created_at=created_at))
+        await session.commit()
+
+
+async def delete_post(post_id: uuid.UUID) -> None:
+    """The mark the author's deletion leaves: the row stays, its text is never read again."""
+    async with app.state.session_factory() as session:
+        await session.execute(
+            update(PostModel).where(PostModel.id == post_id).values(deleted_at=NOW)
+        )
+        await session.commit()
+
+
+async def close_account(user_id: uuid.UUID) -> None:
+    """What consuming user.deleted leaves on the local profile."""
+    async with app.state.session_factory() as session:
+        await session.execute(
+            update(UserProfileModel).where(UserProfileModel.id == user_id).values(deleted_at=NOW)
+        )
         await session.commit()
 
 
@@ -171,3 +203,109 @@ async def test_a_bad_cursor_is_400(api):
     )
 
     assert response.status_code == 400
+
+
+async def test_e2_h14_ca2_retweets_come_in_order_with_own_posts(api):
+    author, other, viewer = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(author)
+    await given_a_profile(other)
+    await insert_post(author, "primero", NOW)
+    # Written a day before, retweeted after "primero": it sits where it was shared.
+    shared = await insert_post(other, "de otra cuenta", NOW - timedelta(days=1))
+    await insert_retweet(author, shared, NOW + timedelta(minutes=2))
+    await insert_post(author, "segundo", NOW + timedelta(minutes=3))
+
+    response = await api.get(f"/users/{author}/posts", headers=signed_in_as(viewer))
+
+    items = response.json()["items"]
+    assert [one["content"] for one in items] == ["segundo", "de otra cuenta", "primero"]
+    retweet = items[1]
+    assert retweet["authorId"] == str(other)
+    assert retweet["retweetedBy"] == handle_of(author)
+    assert retweet["entryId"] == f"retweet:{author}:{shared}"
+    assert items[0]["retweetedBy"] is None
+
+
+async def test_a_retweet_of_an_account_the_viewer_cannot_read_stays_out(api):
+    author, protected, viewer = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(author)
+    await given_a_profile(protected, visibility="protected")
+    hidden = await insert_post(protected, "solo para seguidores", NOW)
+    await insert_retweet(author, hidden, NOW + timedelta(minutes=1))
+    await insert_post(author, "propio", NOW + timedelta(minutes=2))
+
+    response = await api.get(f"/users/{author}/posts", headers=signed_in_as(viewer))
+
+    assert [one["content"] for one in response.json()["items"]] == ["propio"]
+
+
+async def test_deleted_posts_stay_out_of_the_profile_retweeted_or_not(api):
+    author, other, viewer = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(author)
+    await given_a_profile(other)
+    own_deleted = await insert_post(author, "lo borré", NOW)
+    shared_deleted = await insert_post(other, "lo borró su autora", NOW)
+    await insert_retweet(author, shared_deleted, NOW + timedelta(minutes=1))
+    await insert_post(author, "sigue", NOW + timedelta(minutes=2))
+    await delete_post(own_deleted)
+    await delete_post(shared_deleted)
+
+    response = await api.get(f"/users/{author}/posts", headers=signed_in_as(viewer))
+
+    assert [one["content"] for one in response.json()["items"]] == ["sigue"]
+
+
+async def test_e2_h14_ca4_pages_mix_posts_and_retweets_without_repeating(api):
+    author, other, viewer = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(author)
+    await given_a_profile(other)
+    for offset in range(15):
+        await insert_post(author, f"post {offset}", NOW + timedelta(minutes=2 * offset))
+    for offset in range(10):
+        shared = await insert_post(other, f"compartido {offset}", NOW - timedelta(days=1))
+        await insert_retweet(author, shared, NOW + timedelta(minutes=2 * offset + 1))
+
+    first = (await api.get(f"/users/{author}/posts", headers=signed_in_as(viewer))).json()
+    second = (
+        await api.get(
+            f"/users/{author}/posts?cursor={first['nextCursor']}", headers=signed_in_as(viewer)
+        )
+    ).json()
+
+    entries = [one["entryId"] for one in first["items"] + second["items"]]
+    assert len(first["items"]) == 20
+    assert len(second["items"]) == 5
+    assert second["nextCursor"] is None
+    assert len(set(entries)) == 25
+
+
+async def test_a_retweet_of_a_closed_account_stays_out(api):
+    author, closed, viewer = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(author)
+    await given_a_profile(closed)
+    shared = await insert_post(closed, "de una cuenta que cerró", NOW)
+    await insert_retweet(author, shared, NOW + timedelta(minutes=1))
+    await insert_post(author, "propio", NOW + timedelta(minutes=2))
+    await close_account(closed)
+
+    response = await api.get(f"/users/{author}/posts", headers=signed_in_as(viewer))
+
+    assert [one["content"] for one in response.json()["items"]] == ["propio"]
+
+
+async def test_a_retweeted_reply_of_a_closed_account_stays_as_a_deleted_user(api):
+    author, closed, viewer = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(author)
+    await given_a_profile(closed)
+    original = await insert_post(author, "pregunta", NOW)
+    reply = await insert_post(closed, "respuesta", NOW + timedelta(minutes=1), parent_id=original)
+    await insert_retweet(author, reply, NOW + timedelta(minutes=2))
+    await close_account(closed)
+
+    response = await api.get(f"/users/{author}/posts", headers=signed_in_as(viewer))
+
+    items = response.json()["items"]
+    assert [one["content"] for one in items] == ["respuesta", "pregunta"]
+    assert items[0]["authorDeleted"] is True
+    assert items[0]["authorHandle"] is None
+    assert items[1]["authorDeleted"] is False
