@@ -4,14 +4,14 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import distinct, func, select, tuple_
+from sqlalchemy import distinct, func, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from posts_api.app.models.report import Report, ReportReason
+from posts_api.app.models.report import Report, ReportReason, ReportStatus
 from posts_api.app.pagination import DEFAULT_PAGE_SIZE, CountCursor
 from posts_api.infrastructure.database.models import ReportModel, UserProfileModel
 
-PENDING = "pending"
+PENDING = ReportStatus.PENDING.value
 
 
 @dataclass(frozen=True)
@@ -56,18 +56,41 @@ class ReportRepository:
         )
 
     async def distinct_reporters_of(self, target_id: uuid.UUID) -> int:
-        """How many different accounts reported this one, ever.
+        """How many different accounts reported this one, in reports still pending.
 
         Counts reporters and not rows: E3-H5 CA.2 speaks of reports "from
         different accounts", so one account reporting every day still counts
-        once.
+        once. Only pending ones (ADR-020): once the backoffice closes a case,
+        its reporters stop counting, or the next report would put the account
+        back under review right after an administrator released it.
         """
         found = await self._session.execute(
             select(func.count(distinct(ReportModel.reporter_id))).where(
-                ReportModel.target_id == target_id
+                ReportModel.target_id == target_id, ReportModel.status == PENDING
             )
         )
         return found.scalar_one()
+
+    async def close_pending(
+        self,
+        target_id: uuid.UUID,
+        *,
+        status: ReportStatus,
+        decided_by: uuid.UUID,
+        decided_at: datetime,
+    ) -> int:
+        """Close every pending report about the account. Returns how many changed.
+
+        None when the case was already closed: two administrators acting at
+        once both run this, and the second one finds nothing left pending once
+        the first commits.
+        """
+        result = await self._session.execute(
+            update(ReportModel)
+            .where(ReportModel.target_id == target_id, ReportModel.status == PENDING)
+            .values(status=status.value, decided_by=decided_by, decided_at=decided_at)
+        )
+        return result.rowcount
 
     async def pending_cases(
         self, *, cursor: CountCursor | None = None, limit: int = DEFAULT_PAGE_SIZE

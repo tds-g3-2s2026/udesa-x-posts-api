@@ -21,6 +21,18 @@ class ReportReason(StrEnum):
     IMPERSONATION = "impersonation"
 
 
+class ReportStatus(StrEnum):
+    """Where a report stands in the backoffice (E5-H7).
+
+    Only pending ones show in the inbox and count for the review threshold: a
+    case an administrator closed stops adding up (ADR-020).
+    """
+
+    PENDING = "pending"
+    DISMISSED = "dismissed"
+    RESOLVED = "resolved"
+
+
 @dataclass(frozen=True)
 class Report:
     """One account reporting another.
