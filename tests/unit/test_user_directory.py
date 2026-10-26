@@ -27,6 +27,7 @@ def profile_response(**overrides):
         None,
         [],
         profile_response(handle=None),
+        profile_response(handle=""),
         profile_response(handle=42),
         profile_response(profile_visibility=None),
         profile_response(profile_visibility=42),
