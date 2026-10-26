@@ -19,6 +19,7 @@ from sqlalchemy import (
     Integer,
     SmallInteger,
     String,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -288,3 +289,23 @@ class PostMediaModel(Base):
     mime_type: Mapped[str] = mapped_column(String(32))
     size_bytes: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class OutboxModel(Base):
+    """Events waiting to be published (transactional outbox).
+
+    The row is written in the same transaction as the change it describes and
+    deleted by the publisher once the broker confirms it. No foreign key on
+    purpose: an event must outlive whatever it talks about.
+    """
+
+    __tablename__ = "outbox"
+
+    # The id of the event itself: it is what consumers deduplicate on.
+    id: Mapped[uuid.UUID] = mapped_column(postgresql.UUID(as_uuid=True), primary_key=True)
+    type: Mapped[str] = mapped_column(Text)
+    # The whole CloudEvents envelope, exactly as it goes out.
+    payload: Mapped[dict] = mapped_column(postgresql.JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )

@@ -25,9 +25,16 @@ class Settings(BaseSettings):
 
     jwt_issuer: str = "users-api"
 
-    # Where the events of users-api arrive from. No default: without it the
-    # accounts users-api closes would keep their posts in everybody's feed.
+    # The broker of the events, both ways: where the events of users-api arrive
+    # from, and where the outbox publishes this service's own. No default:
+    # without it the accounts users-api closes would keep their posts in
+    # everybody's feed.
     rabbitmq_url: str
+
+    # How often the outbox publisher looks for pending events on its own. A
+    # NOTIFY from the database wakes it sooner; this is the safety net for when
+    # that connection is lost, and the pause between retries while RabbitMQ is down.
+    outbox_poll_seconds: float = 5
 
     # ADR-011: where to ask users-api to put an account under review, and the
     # secret it checks on that internal route. No default for the secret, the

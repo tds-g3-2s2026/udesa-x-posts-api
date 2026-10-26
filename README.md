@@ -80,7 +80,8 @@ sección "Despliegue continuo".
 avisa que una cuenta pasa a revisión por denuncias (ADR-011). La API valida estrictamente el
 issuer al verificar tokens recibidos. Copiar `secret.template.yaml` a `secret.yaml`,
 ignorado por git, y completar `DATABASE_URL` (con esquema `postgresql+asyncpg://`),
-`REDIS_URL`, `RABBITMQ_URL` (el RabbitMQ del que llegan los eventos, ver "Baja de cuentas"),
+`REDIS_URL`, `RABBITMQ_URL` (el RabbitMQ de los eventos, ver "Baja de cuentas" y "Eventos
+que publica"),
 `AUTH_REDIS_URL` (el Redis donde `users-api` escribe las revocaciones, ver
 "Revocación de sesiones"; en el cluster, `redis://redis:6379/0`), `JWT_PUBLIC_KEY` (clave
 pública Ed25519 en PEM) e `INTERNAL_API_TOKEN`, el secreto compartido con `users-api` para sus
@@ -165,6 +166,31 @@ El filtro está en la consulta y no depende de cuándo llegue el evento a una r�
 el manejador commitea, nada la muestra. Antes del evento, lo que sí es inmediato es que sus
 tokens mueren por ADR-014.
 
+## Eventos que publica
+
+Cuando una cuenta empieza a seguir a otra, `posts-api` publica `follow.created.v1` (contrato en
+`contracts/events/`). Es el mismo evento para un follow directo a una cuenta pública y para una
+solicitud aprobada por una cuenta protegida; una solicitud pendiente o rechazada no publica nada.
+`notifications-api` lo consume para mandar el push al seguido.
+
+Se usa un outbox transaccional, igual que en `users-api`:
+
+1. El request escribe el evento en la tabla `outbox`, en la misma transacción que el follow y los
+   contadores. Si una de las escrituras falla, no queda ninguna: no hay follow sin evento ni
+   evento sin follow.
+2. Un trigger hace `pg_notify('outbox', ...)` al insertar. El aviso llega cuando la transacción
+   commitea.
+3. El publicador corre como tarea dentro del proceso de la API. Se despierta con el aviso, o cada
+   `OUTBOX_POLL_SECONDS` (5 por omisión) si se perdió la conexión que escucha. Toma hasta 100 filas
+   con `FOR UPDATE SKIP LOCKED`, así dos réplicas no publican la misma, y las publica en el exchange
+   `udesa-x.events` con el `type` como routing key, con confirmación del broker y `mandatory`.
+4. Cada fila confirmada se borra. Una que el broker devuelve porque ninguna cola está ligada a ese
+   tipo queda en la tabla y se reintenta en la pasada siguiente, sin frenar a las demás.
+
+La entrega es al menos una vez: si el proceso cae entre la confirmación y el borrado, el evento sale
+de nuevo, y el consumidor lo descarta por el `id`. Si RabbitMQ no está, la API responde igual y los
+eventos esperan en la tabla.
+
 ## Estructura
 
 Por capas, según el `ADR-007` de `udesa-x-platform`:
@@ -194,6 +220,7 @@ uv run alembic upgrade head          # aplicar
 | `0002_bloqueos` | `blocks` |
 | `0002b_tabla_de_posts` | `posts`, solo si falta: la base de producción aplicó la `0001` antes de que se le sumara esa tabla |
 | `0003_denuncias` | `reports` |
+| `0010_outbox` | `outbox`, con el trigger que avisa por `pg_notify` en cada inserción |
 
 **Una migración ya aplicada no se edita**: una base que ya la corrió no la vuelve a correr, así
 que el cambio nunca llegaría. Todo cambio de esquema va en una migración nueva.

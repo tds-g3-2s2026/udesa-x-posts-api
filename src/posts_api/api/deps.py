@@ -24,10 +24,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from posts_api.app.errors import ProblemError
 from posts_api.app.models.follow import Account, ProfileVisibility
 from posts_api.app.repositories.image_storage import ImageStorage
+from posts_api.app.repositories.outbox import OutboxRepository
 from posts_api.app.repositories.post_media import PostMediaRepository
 from posts_api.app.repositories.revocations import RevocationStore
 from posts_api.app.security import decode_access_token
 from posts_api.app.services.post_images import PostImages
+from posts_api.infrastructure.database.outbox_repository import SqlAlchemyOutboxRepository
 from posts_api.infrastructure.database.session import session_scope
 from posts_api.infrastructure.redis.revocations import RedisRevocationStore
 
@@ -73,6 +75,15 @@ def get_post_images(session: SessionDep, storage: ImageStorageDep) -> PostImages
 
 
 PostImagesDep = Annotated[PostImages, Depends(get_post_images)]
+
+
+def get_outbox(session: SessionDep) -> OutboxRepository:
+    # The session of the request: the event is written in the same transaction
+    # as the change it describes.
+    return SqlAlchemyOutboxRepository(session)
+
+
+OutboxDep = Annotated[OutboxRepository, Depends(get_outbox)]
 
 
 def get_revocations(request: Request) -> RevocationStore:

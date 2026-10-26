@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
-from posts_api.api.deps import CurrentUserDep, RedisDep, SessionDep
+from posts_api.api.deps import CurrentUserDep, OutboxDep, RedisDep, SessionDep
 from posts_api.api.schemas.follow_listings import FollowListItemSummary, SuggestedAccountSummary
 from posts_api.api.schemas.pagination import CursorPage
 from posts_api.app.repositories.blocks import BlockRepository
@@ -18,7 +18,7 @@ from posts_api.infrastructure.redis.rate_limiter import RedisRateLimiter
 router = APIRouter(prefix="/users", tags=["follows"])
 
 
-def get_follow_service(session: SessionDep, redis: RedisDep) -> FollowService:
+def get_follow_service(session: SessionDep, redis: RedisDep, outbox: OutboxDep) -> FollowService:
     """Where the service gets its collaborators: PostgreSQL and Redis."""
     settings = get_settings()
     return FollowService(
@@ -26,6 +26,7 @@ def get_follow_service(session: SessionDep, redis: RedisDep) -> FollowService:
         FollowRequestRepository(session),
         BlockRepository(session),
         RedisRateLimiter(redis),
+        outbox,
         follow_limit=settings.follow_rate_limit,
         window_seconds=settings.follow_rate_window_seconds,
     )

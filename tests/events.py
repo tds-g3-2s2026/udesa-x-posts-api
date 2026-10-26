@@ -1,4 +1,4 @@
-"""The events of users-api as the contract describes them."""
+"""The events of the queue as the contract describes them."""
 
 import json
 import uuid
@@ -16,6 +16,7 @@ def _validator(name: str) -> Draft202012Validator:
 
 
 USER_DELETED = _validator("user.deleted.v1")
+FOLLOW_CREATED = _validator("follow.created.v1")
 
 
 def user_deleted(

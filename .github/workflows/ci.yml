@@ -11,8 +11,8 @@ jobs:
       # ARQUITECTURA.md turns the gate on for the backend services in S3. Below
       # the minimum the PR goes red and cannot be merged.
       bloquear-por-cobertura: true
-      # RabbitMQ for the suite and for the production image: the consumer tests
-      # run against a real broker.
+      # RabbitMQ for the suite and for the production image: the consumer and
+      # outbox publisher tests run against a real broker.
       rabbitmq: true
 
   # Only a commit on main that passed CI reaches the cluster. The pipeline and

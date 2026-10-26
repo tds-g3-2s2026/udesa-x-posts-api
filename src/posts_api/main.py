@@ -30,6 +30,7 @@ from posts_api.app.security import load_public_key
 from posts_api.config.settings import API_PREFIX, get_settings
 from posts_api.infrastructure.database.session import build_session_factory
 from posts_api.infrastructure.rabbitmq.event_consumer import EventConsumer
+from posts_api.infrastructure.rabbitmq.outbox_publisher import OutboxPublisher
 from posts_api.infrastructure.s3.image_storage import build_image_storage
 from posts_api.infrastructure.telemetry import export, instrument
 from posts_api.infrastructure.users_api.account_review import build_users_api_client
@@ -65,15 +66,24 @@ async def lifespan(app: FastAPI):
     images = build_image_storage(settings)
     await images.start()
     app.state.image_storage = images
-    # A task of its own: the service answers requests while the broker is down.
+    # Tasks of their own: the service answers requests while the broker is down.
+    # The consumer retries on its own, and the events to publish wait in the outbox.
     consumer = EventConsumer(settings.rabbitmq_url, build_event_handler(app.state.session_factory))
     consuming = asyncio.create_task(consumer.run())
+    publisher = OutboxPublisher(
+        session_factory=app.state.session_factory,
+        database_url=settings.database_url,
+        rabbitmq_url=settings.rabbitmq_url,
+        poll_seconds=settings.outbox_poll_seconds,
+    )
+    publishing = asyncio.create_task(publisher.run())
 
     yield
 
-    consuming.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await consuming
+    for task in (consuming, publishing):
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
     await images.aclose()
     await app.state.engine.dispose()
     await app.state.redis.aclose()

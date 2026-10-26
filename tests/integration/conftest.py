@@ -11,6 +11,7 @@ from posts_api.infrastructure.database.models import (
     FollowModel,
     FollowRequestModel,
     LikeModel,
+    OutboxModel,
     PostMediaModel,
     PostModel,
     ReportModel,
@@ -43,6 +44,7 @@ async def api():
             # Before the profiles: both tables carry a foreign key to it.
             await session.execute(delete(PostModel))
             await session.execute(delete(UserProfileModel))
+            await session.execute(delete(OutboxModel))
             await session.commit()
         # The rate limit counters live outside PostgreSQL, so emptying the
         # tables is not enough to leave one test independent from the next.
