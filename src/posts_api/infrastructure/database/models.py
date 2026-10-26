@@ -19,6 +19,7 @@ from sqlalchemy import (
     Integer,
     SmallInteger,
     String,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -216,10 +217,19 @@ class ReportModel(Base):
             name="ck_reports_reason",
         ),
         CheckConstraint("reporter_id <> target_id", name="ck_reports_not_self"),
+        CheckConstraint("status IN ('pending', 'dismissed', 'resolved')", name="ck_reports_status"),
         # The threshold of E3-H5 CA.2 counts the distinct reporters of one
         # account on every new report. With the target first and the reporter
         # second, that count is read from the index alone.
         Index("ix_reports_target_reporter", "target_id", "reporter_id"),
+        # The same, only over what is still pending: what the backoffice inbox
+        # groups and counts (E5-H7), and it shrinks as cases are closed.
+        Index(
+            "ix_reports_pending_target",
+            "target_id",
+            "reporter_id",
+            postgresql_where=text("status = 'pending'"),
+        ),
     )
 
     # Same reasoning as `PostModel.id`: time-ordered and not guessable.
@@ -238,6 +248,15 @@ class ReportModel(Base):
     # Text plus a CHECK, the same choice `UserProfileModel.visibility` makes.
     reason: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # What the backoffice decided (E5-H7): pending until an administrator
+    # closes the case of the reported account. Same shape as `reason`.
+    status: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending")
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # The administrator who closed it. No foreign key: administrators have no
+    # profile in this service, only the id their token carries.
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True), default=None
+    )
 
 
 class LikeModel(Base):
@@ -294,3 +313,23 @@ class PostMediaModel(Base):
     mime_type: Mapped[str] = mapped_column(String(32))
     size_bytes: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class OutboxModel(Base):
+    """Events waiting to be published (transactional outbox).
+
+    The row is written in the same transaction as the change it describes and
+    deleted by the publisher once the broker confirms it. No foreign key on
+    purpose: an event must outlive whatever it talks about.
+    """
+
+    __tablename__ = "outbox"
+
+    # The id of the event itself: it is what consumers deduplicate on.
+    id: Mapped[uuid.UUID] = mapped_column(postgresql.UUID(as_uuid=True), primary_key=True)
+    type: Mapped[str] = mapped_column(Text)
+    # The whole CloudEvents envelope, exactly as it goes out.
+    payload: Mapped[dict] = mapped_column(postgresql.JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )

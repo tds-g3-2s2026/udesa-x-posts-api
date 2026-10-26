@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 
-from posts_api.api.deps import CurrentUserDep, SessionDep
+from posts_api.api.deps import CurrentUserDep, OutboxDep, SessionDep
 from posts_api.api.schemas.follow_requests import FollowRequestSummary
 from posts_api.api.schemas.pagination import CursorPage
 from posts_api.app.repositories.follow_requests import FollowRequestRepository
@@ -13,10 +13,10 @@ from posts_api.app.services.follow_requests import FollowRequestService
 router = APIRouter(prefix="/follow-requests", tags=["follow-requests"])
 
 
-def get_follow_request_service(session: SessionDep) -> FollowRequestService:
-    # Both repositories share the session of the request, so approving writes
-    # the answer, the relationship and the counters in one transaction.
-    return FollowRequestService(FollowRequestRepository(session), FollowRepository(session))
+def get_follow_request_service(session: SessionDep, outbox: OutboxDep) -> FollowRequestService:
+    # Every collaborator shares the session of the request, so approving writes
+    # the answer, the relationship, the counters and the event in one transaction.
+    return FollowRequestService(FollowRequestRepository(session), FollowRepository(session), outbox)
 
 
 ServiceDep = Annotated[FollowRequestService, Depends(get_follow_request_service)]

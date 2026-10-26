@@ -25,6 +25,18 @@ from posts_api.app.errors import ProblemError
 DEFAULT_PAGE_SIZE = 20
 
 
+def invalid_cursor() -> ProblemError:
+    # A client is never expected to build one of these by hand, but a stale
+    # cursor from a previous deploy or a tampered query string should not turn
+    # into a 500.
+    return ProblemError(
+        status=400,
+        code="invalid-cursor",
+        title="Cursor inválido",
+        detail="El cursor no tiene un formato reconocible",
+    )
+
+
 @dataclass(frozen=True)
 class Cursor:
     """The tiebreak a page ends on: the ordering column plus an id.
@@ -52,15 +64,38 @@ class Cursor:
                 raise ValueError("Cursor timestamp requires a timezone")
             return cls(at=at, tiebreak=uuid.UUID(tiebreak_raw))
         except (ValueError, binascii.Error) as error:
-            # A client is never expected to build one of these by hand, but a
-            # stale cursor from a previous deploy or a tampered query string
-            # should not turn into a 500.
-            raise ProblemError(
-                status=400,
-                code="invalid-cursor",
-                title="Cursor inválido",
-                detail="El cursor no tiene un formato reconocible",
-            ) from error
+            raise invalid_cursor() from error
+
+
+@dataclass(frozen=True)
+class CountCursor:
+    """The tiebreak of a listing ordered by a count before an instant.
+
+    The backoffice inbox (E5-H7) puts first the account reported by the most
+    different people, so the count leads, the instant breaks ties between equal
+    counts, and the id breaks the rest, the same way it does in `Cursor`.
+    """
+
+    count: int
+    at: datetime
+    tiebreak: uuid.UUID
+
+    def encode(self) -> str:
+        raw = f"{self.count}|{self.at.isoformat()}|{self.tiebreak}"
+        return base64.urlsafe_b64encode(raw.encode()).decode()
+
+    @classmethod
+    def decode(cls, value: str) -> "CountCursor":
+        try:
+            raw = base64.urlsafe_b64decode(value.encode()).decode()
+            count_raw, at_raw, tiebreak_raw = raw.split("|")
+            return cls(
+                count=int(count_raw),
+                at=datetime.fromisoformat(at_raw),
+                tiebreak=uuid.UUID(tiebreak_raw),
+            )
+        except (ValueError, binascii.Error) as error:
+            raise invalid_cursor() from error
 
 
 def apply_cursor(
