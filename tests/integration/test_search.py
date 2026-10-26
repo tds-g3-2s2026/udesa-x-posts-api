@@ -1,4 +1,5 @@
 import base64
+import os
 import uuid
 from datetime import UTC, datetime
 
@@ -154,11 +155,15 @@ async def test_e2_h10_ca5_internal_blocks_check_is_authenticated_and_batched(api
     }
     path = "http://test/internal/blocks/check"
     assert (await api.post(path, json=body)).status_code == 401
-    response = await api.post(path, json=body, headers={"X-Internal-Token": "test-internal-token"})
+    response = await api.post(
+        path, json=body, headers={"X-Internal-Token": os.environ["INTERNAL_API_TOKEN"]}
+    )
     assert set(response.json()["excluded_ids"]) == {str(outgoing), str(incoming)}
     body["user_ids"] = [str(other)] * 51
     assert (
-        await api.post(path, json=body, headers={"X-Internal-Token": "test-internal-token"})
+        await api.post(
+            path, json=body, headers={"X-Internal-Token": os.environ["INTERNAL_API_TOKEN"]}
+        )
     ).status_code == 422
 
 
