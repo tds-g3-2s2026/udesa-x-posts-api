@@ -1,6 +1,5 @@
 """Literal search terms and compact highlighted excerpts."""
 
-import re
 from dataclasses import dataclass
 
 from posts_api.app.errors import ProblemError
@@ -24,9 +23,9 @@ def normalize_query(value: str) -> str:
     return query
 
 
-def snippet(content: str, query: str) -> list[SnippetSegment]:
-    matches = list(re.finditer(re.escape(query), content, re.IGNORECASE))
-    start = max(0, matches[0].start() - 40) if matches and len(content) > 160 else 0
+def snippet(content: str, query: str, match_positions: list[int]) -> list[SnippetSegment]:
+    matches = [(position, position + len(query)) for position in match_positions]
+    start = max(0, matches[0][0] - 40) if matches and len(content) > 160 else 0
     end = min(len(content), start + 160 - int(start > 0))
     if end < len(content):
         end -= 1
@@ -42,10 +41,16 @@ def snippet(content: str, query: str) -> list[SnippetSegment]:
 
     append("…" if start else "")
     position = start
-    for match in matches:
-        left, right = max(start, match.start()), min(end, match.end())
+    visible_matches: list[tuple[int, int]] = []
+    for match_start, match_end in matches:
+        left, right = max(start, match_start), min(end, match_end)
         if left >= right:
             continue
+        if visible_matches and left <= visible_matches[-1][1]:
+            visible_matches[-1] = (visible_matches[-1][0], max(visible_matches[-1][1], right))
+        else:
+            visible_matches.append((left, right))
+    for left, right in visible_matches:
         append(content[position:left])
         append(content[left:right], True)
         position = right

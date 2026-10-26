@@ -62,6 +62,32 @@ async def test_e2_h10_ca1_wildcards_are_literal_and_accents_are_preserved(api):
         assert [item["id"] for item in response.json()["items"]] == [str(expected)]
 
 
+async def test_e2_h10_ca3_snippet_uses_the_postgres_unicode_match(api):
+    owner = uuid.uuid4()
+    await given_a_profile(owner)
+    post_id = (await insert_posts(owner, ["ıbc " + "x" * 170 + "ibc"]))[0]
+
+    response = await api.get("/search/posts", params={"q": "ibc"}, headers=signed_in_as(owner))
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["id"] == str(post_id)
+    assert "".join(part["text"] for part in item["snippet"] if part["highlighted"]) == "ibc"
+
+
+async def test_e2_h10_ca3_overlapping_database_matches_share_one_highlight(api):
+    owner = uuid.uuid4()
+    await given_a_profile(owner)
+    post_id = (await insert_posts(owner, ["bananana"]))[0]
+
+    response = await api.get("/search/posts", params={"q": "anana"}, headers=signed_in_as(owner))
+
+    item = response.json()["items"][0]
+    assert item["id"] == str(post_id)
+    assert "".join(part["text"] for part in item["snippet"]) == "bananana"
+    assert "".join(part["text"] for part in item["snippet"] if part["highlighted"]) == "ananana"
+
+
 async def test_e2_h10_ca4_twenty_visible_results_with_tied_dates_and_last_page(api):
     owner = uuid.uuid4()
     await given_a_profile(owner)
@@ -82,6 +108,18 @@ async def test_e2_h10_ca4_twenty_visible_results_with_tied_dates_and_last_page(a
     assert [item["id"] for item in first["items"] + second["items"]] == [
         str(value) for value in sorted(ids, reverse=True)
     ]
+
+
+async def test_e2_h10_ca4_no_matches_returns_an_empty_page(api):
+    owner = uuid.uuid4()
+    await given_a_profile(owner)
+
+    response = await api.get(
+        "/search/posts", params={"q": "nomatches"}, headers=signed_in_as(owner)
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "nextCursor": None}
 
 
 async def test_e2_h10_ca5_protected_deleted_and_blocked_authors_are_filtered(api):

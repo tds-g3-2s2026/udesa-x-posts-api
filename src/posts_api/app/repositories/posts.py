@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.app.models.post import Post, PostWithAuthor
@@ -74,10 +75,28 @@ class PostRepository:
 
     async def search(
         self, query: str, viewer_id: uuid.UUID, *, cursor: Cursor | None
-    ) -> tuple[list[PostWithAuthor], str | None]:
+    ) -> tuple[list[tuple[PostWithAuthor, list[int]]], str | None]:
         escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        positions = (
+            func.generate_series(1, func.char_length(PostModel.content) - len(query) + 1)
+            .table_valued("position")
+            .render_derived(name="match_positions")
+        )
+        match_positions = (
+            select(
+                func.array_agg(aggregate_order_by(positions.c.position - 1, positions.c.position))
+            )
+            .select_from(positions)
+            .where(
+                func.substr(PostModel.content, positions.c.position, len(query)).ilike(
+                    escaped, escape="\\"
+                )
+            )
+            .correlate(PostModel)
+            .scalar_subquery()
+        )
         statement = (
-            select(PostModel, UserProfileModel.handle)
+            select(PostModel, UserProfileModel.handle, match_positions)
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
             .where(
                 PostModel.content.ilike(f"%{escaped}%", escape="\\"),
@@ -95,12 +114,15 @@ class PostRepository:
                 statement, order_by=PostModel.created_at, tiebreak_by=PostModel.id, cursor=cursor
             )
         )
-        posts = [_to_post_with_author(post, handle, None, False, False) for post, handle in rows]
+        posts = [
+            (_to_post_with_author(post, handle, None, False, False), positions or [])
+            for post, handle, positions in rows
+        ]
         return page_of(
             posts,
             limit=DEFAULT_PAGE_SIZE,
-            at=lambda post: post.created_at,
-            tiebreak=lambda post: post.id,
+            at=lambda item: item[0].created_at,
+            tiebreak=lambda item: item[0].id,
         )
 
     async def count_created_since(self, since: datetime) -> int:

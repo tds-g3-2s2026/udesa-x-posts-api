@@ -41,7 +41,7 @@ async def search_posts(
     query = normalize_query(q)
     decoded = Cursor.decode(cursor) if cursor is not None else None
     await FollowRepository(session).ensure_profile(current_user)
-    posts, next_cursor = await PostRepository(session).search(
+    results, next_cursor = await PostRepository(session).search(
         query, current_user.id, cursor=decoded
     )
     return CursorPage(
@@ -54,10 +54,10 @@ async def search_posts(
                 parent_id=post.parent_id,
                 snippet=[
                     SegmentResponse(text=part.text, highlighted=part.highlighted)
-                    for part in snippet(post.content, query)
+                    for part in snippet(post.content, query, positions)
                 ],
             )
-            for post in posts
+            for post, positions in results
         ],
         next_cursor=next_cursor,
     )

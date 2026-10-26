@@ -1,7 +1,13 @@
+import re
+
 import pytest
 
 from posts_api.app.errors import ProblemError
 from posts_api.app.search import normalize_query, snippet
+
+
+def match_positions(content, query):
+    return [match.start() for match in re.finditer(re.escape(query), content, re.IGNORECASE)]
 
 
 @pytest.mark.parametrize(
@@ -14,7 +20,7 @@ from posts_api.app.search import normalize_query, snippet
     ],
 )
 def test_e2_h10_ca3_snippet_highlights_within_160_unicode_characters(content, query):
-    parts = snippet(content, query)
+    parts = snippet(content, query, match_positions(content, query))
     assert len("".join(part.text for part in parts)) <= 160
     assert any(part.highlighted for part in parts)
     assert all(part.text for part in parts)
@@ -29,7 +35,7 @@ def test_e2_h10_ca1_query_rejects_short_or_unusable_values(query):
 def test_e2_h10_ca3_repeated_matches_beyond_the_excerpt_are_omitted():
     content = "UdeSA " * 44 + "final"
 
-    parts = snippet(content, "udesa")
+    parts = snippet(content, "udesa", match_positions(content, "udesa"))
     rendered = "".join(part.text for part in parts)
 
     assert len(rendered) == 160
@@ -37,3 +43,11 @@ def test_e2_h10_ca3_repeated_matches_beyond_the_excerpt_are_omitted():
     assert "final" not in rendered
     assert sum(part.highlighted for part in parts) > 1
     assert all("udesa".startswith(part.text.lower()) for part in parts if part.highlighted)
+
+
+def test_e2_h10_ca3_overlapping_matches_are_highlighted_without_duplicating_text():
+    content = "bananana"
+    parts = snippet(content, "anana", [1, 3])
+
+    assert "".join(part.text for part in parts) == content
+    assert "".join(part.text for part in parts if part.highlighted) == "ananana"
