@@ -8,11 +8,10 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
 
 import httpx
+from pydantic import TypeAdapter
 
-from posts_api.app.models.follow import ProfileVisibility
 from posts_api.app.models.profile import AccountDetails
 from posts_api.app.repositories.user_directory import UserDirectory, UserDirectoryUnavailableError
 
@@ -22,6 +21,7 @@ logger = logging.getLogger(__name__)
 # Kept short on purpose: somebody is waiting for the profile to open.
 ATTEMPTS = 2
 BACKOFF_SECONDS = 0.2
+ACCOUNT_DETAILS_ADAPTER = TypeAdapter(AccountDetails)
 
 
 def is_missing_account(response: httpx.Response) -> bool:
@@ -34,9 +34,14 @@ def is_missing_account(response: httpx.Response) -> bool:
     if response.status_code != httpx.codes.NOT_FOUND:
         return False
     try:
-        return response.json().get("type", "").endswith("/account-not-found")
-    except ValueError:
+        body = response.json()
+    except (TypeError, ValueError):
         return False
+    return (
+        isinstance(body, dict)
+        and isinstance(body.get("type"), str)
+        and body["type"].endswith("/account-not-found")
+    )
 
 
 @dataclass
@@ -52,15 +57,11 @@ class HttpUserDirectory(UserDirectory):
                 if is_missing_account(response):
                     return None
                 response.raise_for_status()
-                body = response.json()
-                return AccountDetails(
-                    handle=body["handle"],
-                    profile_visibility=ProfileVisibility(body["profile_visibility"]),
-                    display_name=body["display_name"],
-                    bio=body["bio"],
-                    created_at=datetime.fromisoformat(body["created_at"]),
-                )
-            except (httpx.HTTPError, KeyError, ValueError) as exc:
+                details = ACCOUNT_DETAILS_ADAPTER.validate_json(response.content, strict=True)
+                if not details.handle:
+                    raise ValueError("Expected a non-empty account handle")
+                return details
+            except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
                 # The last attempt always ends here or in the return above, so
                 # the loop never falls through.
                 if attempt == ATTEMPTS:

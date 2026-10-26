@@ -30,6 +30,7 @@ class FakeUsersApi:
         self.down = False
         self.without_the_route = False
         self.behind_a_proxy = False
+        self.malformed_profile = False
 
     def has(self, user_id: uuid.UUID, *, display_name=None, bio=None, visibility="public") -> None:
         self.accounts[user_id] = {
@@ -56,6 +57,8 @@ class FakeUsersApi:
             return httpx.Response(
                 404, json={"type": "https://udesa-x.dev/errors/account-not-found", "status": 404}
             )
+        if self.malformed_profile:
+            return httpx.Response(200, json=[])
         return httpx.Response(200, json=self.accounts[user_id])
 
 
@@ -232,6 +235,22 @@ async def test_e2_h10_ca6_missing_profile_dependency_failure_is_503(api, users_a
     users_api.down = True
     response = await api.get(f"/users/{uuid.uuid4()}", headers=signed_in_as(uuid.uuid4()))
     assert response.status_code == 503
+
+
+async def test_e2_h10_ca6_malformed_identity_profile_is_503_without_creating_copy(api, users_api):
+    from posts_api.infrastructure.database.models import UserProfileModel
+
+    viewer, owner = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(viewer)
+    users_api.has(owner)
+    users_api.malformed_profile = True
+
+    response = await api.get(f"/users/{owner}", headers=signed_in_as(viewer))
+
+    assert response.status_code == 503
+    assert response.json()["type"].endswith("/profile-unavailable")
+    async with app.state.session_factory() as session:
+        assert await session.get(UserProfileModel, owner) is None
 
 
 async def test_e2_h10_ca6_deleted_profile_is_not_recreated(api, users_api):
