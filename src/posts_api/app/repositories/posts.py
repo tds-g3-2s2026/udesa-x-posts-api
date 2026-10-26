@@ -72,6 +72,37 @@ class PostRepository:
         await self._session.refresh(row)
         return _to_post(row)
 
+    async def search(
+        self, query: str, viewer_id: uuid.UUID, *, cursor: Cursor | None
+    ) -> tuple[list[PostWithAuthor], str | None]:
+        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        statement = (
+            select(PostModel, UserProfileModel.handle)
+            .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
+            .where(
+                PostModel.content.ilike(f"%{escaped}%", escape="\\"),
+                PostModel.deleted_at.is_(None),
+                visible_to(
+                    viewer_id,
+                    author_id=PostModel.author_id,
+                    author_visibility=UserProfileModel.visibility,
+                    author_deleted_at=UserProfileModel.deleted_at,
+                ),
+            )
+        )
+        rows = await self._session.execute(
+            apply_cursor(
+                statement, order_by=PostModel.created_at, tiebreak_by=PostModel.id, cursor=cursor
+            )
+        )
+        posts = [_to_post_with_author(post, handle, None, False, False) for post, handle in rows]
+        return page_of(
+            posts,
+            limit=DEFAULT_PAGE_SIZE,
+            at=lambda post: post.created_at,
+            tiebreak=lambda post: post.id,
+        )
+
     async def count_created_since(self, since: datetime) -> int:
         return await self._session.scalar(
             select(func.count()).select_from(PostModel).where(PostModel.created_at >= since)

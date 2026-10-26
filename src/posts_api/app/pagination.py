@@ -47,7 +47,10 @@ class Cursor:
         try:
             raw = base64.urlsafe_b64decode(value.encode()).decode()
             at_raw, tiebreak_raw = raw.split("|")
-            return cls(at=datetime.fromisoformat(at_raw), tiebreak=uuid.UUID(tiebreak_raw))
+            at = datetime.fromisoformat(at_raw)
+            if at.tzinfo is None or at.utcoffset() is None:
+                raise ValueError("Cursor timestamp requires a timezone")
+            return cls(at=at, tiebreak=uuid.UUID(tiebreak_raw))
         except (ValueError, binascii.Error) as error:
             # A client is never expected to build one of these by hand, but a
             # stale cursor from a previous deploy or a tampered query string

@@ -7,7 +7,7 @@ one transaction.
 
 import uuid
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,6 +44,19 @@ class BlockRepository:
     async def has_blocked(self, blocker_id: uuid.UUID, blocked_id: uuid.UUID) -> bool:
         row = await self._session.get(BlockModel, (blocker_id, blocked_id))
         return row is not None
+
+    async def excluded_ids(
+        self, viewer_id: uuid.UUID, user_ids: list[uuid.UUID]
+    ) -> list[uuid.UUID]:
+        rows = await self._session.execute(
+            select(BlockModel.blocker_id, BlockModel.blocked_id).where(
+                or_(
+                    and_(BlockModel.blocker_id == viewer_id, BlockModel.blocked_id.in_(user_ids)),
+                    and_(BlockModel.blocked_id == viewer_id, BlockModel.blocker_id.in_(user_ids)),
+                )
+            )
+        )
+        return sorted({blocked if blocker == viewer_id else blocker for blocker, blocked in rows})
 
     async def blocked_by(
         self,
