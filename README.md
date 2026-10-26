@@ -166,6 +166,33 @@ El filtro está en la consulta y no depende de cuándo llegue el evento a una r�
 el manejador commitea, nada la muestra. Antes del evento, lo que sí es inmediato es que sus
 tokens mueren por ADR-014.
 
+## Denuncias y bandeja del backoffice
+
+Una cuenta pasa a revisión cuando junta denuncias pendientes de 6 cuentas distintas: `posts-api` se
+lo pide a `users-api` por `POST /internal/users/{id}/review` (ADR-011). Cada denuncia está
+pendiente, descartada o resuelta, y solo las pendientes cuentan para ese umbral
+([ADR-020](https://github.com/tds-g3-2s2026/udesa-x-platform/blob/main/docs/adr/ADR-020-cierre-de-casos-de-denuncias.md)).
+
+El backoffice las ve agrupadas en casos, uno por cuenta (E5-H7), todo bajo `/api/admin/posts`
+porque el gateway ya manda ese prefijo acá:
+
+| Ruta | Qué hace |
+|---|---|
+| `GET /admin/posts/reports/cases?cursor=` | Cuentas con denuncias pendientes, primero la que denunció más gente distinta, después la denunciada más recientemente. Veinte por página, con `nextCursor` |
+| `POST /admin/posts/reports/cases/{id}/dismiss` | Descarta las pendientes de la cuenta |
+| `POST /admin/posts/reports/cases/{id}/resolve` | Las resuelve. "Suspender" en el backoffice bloquea la cuenta en `users-api` y después resuelve |
+
+Descartar y Resolver guardan quién y cuándo, y le piden a `users-api` que levante la revisión
+con `DELETE /internal/users/{id}/review`: una cuenta en revisión vuelve a entrar, y una
+suspendida no cambia. Ese pedido sale antes de confirmar el cambio: si `users-api` no responde
+después de un reintento, la acción responde `503` (`users-api-unavailable`) y las denuncias
+siguen pendientes para volver a intentarlo. Un caso sin pendientes responde `204` y no hace
+nada. Solo un token de `moderator` o `superadmin` llega a estas rutas.
+
+Cada acción queda en una auditoría en memoria hasta que exista la de `E5-H6`. Se pierde con el
+pod, por eso cada entrada también sale en el log (`Audit: report.dismissed by ...`), que llega a
+Grafana.
+
 ## Eventos que publica
 
 Cuando una cuenta empieza a seguir a otra, `posts-api` publica `follow.created.v1` (contrato en

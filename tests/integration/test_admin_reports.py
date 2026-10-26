@@ -3,9 +3,14 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import update
+import httpx
+import pytest
+from sqlalchemy import select, update
 
+from posts_api.api import admin_posts
+from posts_api.api.deps import get_users_api
 from posts_api.infrastructure.database.models import ReportModel, UserProfileModel
+from posts_api.infrastructure.users_api.account_review import build_users_api_client
 from posts_api.main import app
 from tests.conftest import issue_token, requires_services
 from tests.integration.conftest import given_a_profile, handle_of, signed_in_as
@@ -162,3 +167,191 @@ async def test_a_superadmin_lists_cases_too(api):
 
     assert response.status_code == 200
     assert response.json() == {"items": [], "nextCursor": None}
+
+
+class FakeUsersApi:
+    """Answers in place of users-api and remembers every call posts-api made."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, str | None]] = []
+        # A status code, or "down" for a users-api that does not answer at all.
+        self.answer: int | str = 204
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        self.calls.append(
+            (request.method, request.url.path, request.headers.get("X-Internal-Token"))
+        )
+        if self.answer == "down":
+            raise httpx.ConnectError("users-api is down", request=request)
+        return httpx.Response(self.answer)
+
+    def lifts_of(self, user_id: uuid.UUID) -> int:
+        return self.calls.count(("DELETE", f"/internal/users/{user_id}/review", "secreto"))
+
+
+@pytest.fixture
+async def users_api():
+    """The real client, with users-api's answers under the test's control."""
+    fake = FakeUsersApi()
+    client = build_users_api_client(
+        "http://users-api", "secreto", transport=httpx.MockTransport(fake.handle)
+    )
+    app.dependency_overrides[get_users_api] = lambda: client
+    yield fake
+    app.dependency_overrides.pop(get_users_api)
+    await client.aclose()
+
+
+ADMIN = uuid.uuid4()
+
+
+def as_moderator() -> dict[str, str]:
+    return {"Authorization": f"Bearer {issue_token(ADMIN, role='moderator')}"}
+
+
+async def close(api, action: str, user_id: uuid.UUID, headers: dict[str, str] | None = None):
+    return await api.post(
+        f"/admin/posts/reports/cases/{user_id}/{action}",
+        headers=as_moderator() if headers is None else headers,
+    )
+
+
+async def stored_reports(target: uuid.UUID) -> list[tuple]:
+    """Status, who decided and when, oldest report first."""
+    async with app.state.session_factory() as session:
+        found = await session.execute(
+            select(ReportModel.status, ReportModel.decided_by, ReportModel.decided_at)
+            .where(ReportModel.target_id == target)
+            .order_by(ReportModel.created_at)
+        )
+        return [tuple(row) for row in found.all()]
+
+
+async def statuses_of(target: uuid.UUID) -> set[str]:
+    return {status for status, _, _ in await stored_reports(target)}
+
+
+async def given_a_case(reporters: int = 2) -> uuid.UUID:
+    target, *others = await given_accounts(reporters + 1)
+    for minutes, reporter in enumerate(others):
+        await given_report(reporter, target, at=NOW - timedelta(minutes=minutes))
+    return target
+
+
+async def test_e5_h7_ca2_dismiss_marks_pending_reports_and_keeps_the_account(api, users_api):
+    target = await given_a_case(reporters=2)
+    already_resolved = (await given_accounts(1))[0]
+    await given_report(already_resolved, target, at=NOW - timedelta(days=3), status="resolved")
+    before = datetime.now(UTC)
+
+    response = await close(api, "dismiss", target)
+
+    assert response.status_code == 204
+    resolved, *dismissed = await stored_reports(target)
+    assert resolved == ("resolved", None, None)
+    assert [(status, by) for status, by, _ in dismissed] == [("dismissed", ADMIN)] * 2
+    assert all(at >= before for _, _, at in dismissed)
+    # Released, not sanctioned: the only call is the lift, with the shared secret.
+    assert users_api.calls == [("DELETE", f"/internal/users/{target}/review", "secreto")]
+    assert (await cases(api)).json()["items"] == []
+
+
+async def test_e5_h7_ca2_dismissing_twice_changes_nothing(api, users_api):
+    target = await given_a_case()
+    assert (await close(api, "dismiss", target)).status_code == 204
+    first = await stored_reports(target)
+
+    assert (await close(api, "dismiss", target)).status_code == 204
+
+    assert await stored_reports(target) == first
+    # Nothing was pending the second time: users-api is not asked again.
+    assert users_api.lifts_of(target) == 1
+
+
+async def test_e5_h7_ca3_resolve_moves_the_case_out_of_pending(api, users_api):
+    target = await given_a_case()
+
+    response = await close(api, "resolve", target)
+
+    assert response.status_code == 204
+    assert await statuses_of(target) == {"resolved"}
+    assert users_api.lifts_of(target) == 1
+
+
+async def test_e5_h7_ca3_resolved_reports_are_not_listed(api, users_api):
+    resolved = await given_a_case(reporters=3)
+    still_open = await given_a_case(reporters=1)
+
+    await close(api, "resolve", resolved)
+
+    assert users_of(await cases(api)) == [str(still_open)]
+
+
+async def test_a_case_stays_open_when_users_api_does_not_answer(api, users_api):
+    target = await given_a_case()
+    users_api.answer = "down"
+
+    response = await close(api, "dismiss", target)
+
+    assert response.status_code == 503
+    assert response.json()["type"].endswith("/users-api-unavailable")
+    # Rolled back: the reports wait for the administrator to try again.
+    assert await statuses_of(target) == {"pending"}
+    assert users_of(await cases(api)) == [str(target)]
+    # Tried once more before giving up, as every call between services does.
+    assert users_api.lifts_of(target) == 2
+    assert not [one for one in admin_posts.audit_log.entries if one.target_id == target]
+
+
+async def test_an_account_users_api_no_longer_has_is_closed_anyway(api, users_api):
+    target = await given_a_case()
+    users_api.answer = 404
+
+    assert (await close(api, "resolve", target)).status_code == 204
+
+    assert await statuses_of(target) == {"resolved"}
+
+
+async def test_after_a_dismissal_the_review_threshold_counts_from_zero(api, users_api):
+    target = await given_a_case(reporters=6)
+    await close(api, "dismiss", target)
+
+    response = await api.post(
+        "/reports",
+        json={"userId": str(target), "reason": "spam"},
+        headers=signed_in_as(uuid.uuid4()),
+    )
+
+    assert response.status_code == 201
+    # Six reporters, but all from a closed case: one pending is far from the
+    # threshold, so users-api is not asked to review the account again.
+    assert ("POST", f"/internal/users/{target}/review", "secreto") not in users_api.calls
+
+
+async def test_closing_a_case_leaves_an_audit_entry(api, users_api):
+    target = await given_a_case(reporters=2)
+
+    await close(api, "dismiss", target)
+
+    # The log is shared by the whole process: the entry is found by its target.
+    [entry] = [one for one in admin_posts.audit_log.entries if one.target_id == target]
+    assert entry.actor_id == ADMIN
+    assert (entry.action, entry.target_type) == ("report.dismissed", "user")
+    assert entry.details == {"reports": 2}
+
+
+async def test_closing_a_case_with_nothing_pending_does_not_reach_users_api(api, users_api):
+    response = await close(api, "dismiss", uuid.uuid4())
+
+    assert response.status_code == 204
+    assert users_api.calls == []
+
+
+@pytest.mark.parametrize("action", ["dismiss", "resolve"])
+async def test_e5_h7_a_user_token_cannot_close_cases(api, users_api, action):
+    target = await given_a_case()
+
+    response = await close(api, action, target, headers=signed_in_as(uuid.uuid4()))
+
+    assert response.status_code == 403
+    assert await statuses_of(target) == {"pending"}
