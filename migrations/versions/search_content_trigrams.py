@@ -3,7 +3,7 @@
 from alembic import op
 
 revision = "search_content_trigrams"
-down_revision = "0009_cuenta_eliminada"
+down_revision = "0011_estado_de_denuncias"
 branch_labels = None
 depends_on = None
 
