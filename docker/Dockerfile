@@ -46,6 +46,11 @@ COPY --from=builder --chown=app:app /app/src /app/src
 COPY --from=builder --chown=app:app /app/alembic.ini /app/alembic.ini
 COPY --from=builder --chown=app:app /app/migrations /app/migrations
 
+# CA roots of Amazon RDS in us-east-2, which signs the production database's
+# certificate (ADR-021). PGSSLROOTCERT points here; the system bundle does not
+# include them.
+COPY docker/rds-ca-us-east-2.pem /etc/ssl/certs/rds-ca-us-east-2.pem
+
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
