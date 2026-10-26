@@ -119,7 +119,7 @@ async def test_e2_h10_ca5_protected_deleted_and_blocked_authors_are_filtered(api
     assert len(await results()) == 1
 
 
-@pytest.mark.parametrize("query", ["ab", " ab ", "   "])
+@pytest.mark.parametrize("query", ["ab", " ab ", "   ", "abc\x00def"])
 async def test_e2_h10_ca1_invalid_normalized_queries_are_422(api, query):
     response = await api.get(
         "/search/posts", params={"q": query}, headers=signed_in_as(uuid.uuid4())
@@ -132,6 +132,13 @@ async def test_e2_h10_ca4_invalid_cursor_and_missing_session(api):
     response = await api.get(
         "/search/posts",
         params={"q": "universidad", "cursor": "invalid"},
+        headers=signed_in_as(uuid.uuid4()),
+    )
+    assert response.status_code == 400
+    raw_cursor = f"0001-01-01T00:00:00+23:59|{uuid.uuid4()}".encode()
+    response = await api.get(
+        "/search/posts",
+        params={"q": "universidad", "cursor": base64.urlsafe_b64encode(raw_cursor).decode()},
         headers=signed_in_as(uuid.uuid4()),
     )
     assert response.status_code == 400

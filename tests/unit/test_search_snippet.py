@@ -20,8 +20,8 @@ def test_e2_h10_ca3_snippet_highlights_within_160_unicode_characters(content, qu
     assert all(part.text for part in parts)
 
 
-@pytest.mark.parametrize("query", ["", "ab", "  ab  "])
-def test_e2_h10_ca1_query_requires_three_trimmed_characters(query):
+@pytest.mark.parametrize("query", ["", "ab", "  ab  ", "abc\x00def"])
+def test_e2_h10_ca1_query_rejects_short_or_unusable_values(query):
     with pytest.raises(ProblemError):
         normalize_query(query)
 

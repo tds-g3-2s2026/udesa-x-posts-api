@@ -14,7 +14,7 @@ class SnippetSegment:
 
 def normalize_query(value: str) -> str:
     query = value.strip()
-    if len(query) < 3:
+    if len(query) < 3 or "\x00" in query:
         raise ProblemError(
             status=422,
             code="invalid-query",
