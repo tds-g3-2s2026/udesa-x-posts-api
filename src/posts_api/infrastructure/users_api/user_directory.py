@@ -12,6 +12,7 @@ from datetime import datetime
 
 import httpx
 
+from posts_api.app.models.follow import ProfileVisibility
 from posts_api.app.models.profile import AccountDetails
 from posts_api.app.repositories.user_directory import UserDirectory, UserDirectoryUnavailableError
 
@@ -53,6 +54,8 @@ class HttpUserDirectory(UserDirectory):
                 response.raise_for_status()
                 body = response.json()
                 return AccountDetails(
+                    handle=body["handle"],
+                    profile_visibility=ProfileVisibility(body["profile_visibility"]),
                     display_name=body["display_name"],
                     bio=body["bio"],
                     created_at=datetime.fromisoformat(body["created_at"]),

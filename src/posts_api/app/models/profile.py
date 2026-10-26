@@ -4,6 +4,8 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
+from posts_api.app.models.follow import ProfileVisibility
+
 
 @dataclass(frozen=True)
 class AccountDetails:
@@ -14,6 +16,8 @@ class AccountDetails:
     They are asked for when somebody opens the profile.
     """
 
+    handle: str
+    profile_visibility: ProfileVisibility
     display_name: str | None
     bio: str | None
     created_at: datetime

@@ -31,10 +31,11 @@ class FakeUsersApi:
         self.without_the_route = False
         self.behind_a_proxy = False
 
-    def has(self, user_id: uuid.UUID, *, display_name=None, bio=None) -> None:
+    def has(self, user_id: uuid.UUID, *, display_name=None, bio=None, visibility="public") -> None:
         self.accounts[user_id] = {
             "id": str(user_id),
             "handle": handle_of(user_id),
+            "profile_visibility": visibility,
             "display_name": display_name,
             "bio": bio,
             "created_at": "2026-09-01T12:00:00Z",
@@ -133,11 +134,11 @@ async def test_an_account_the_viewer_blocked_is_404_too(api, users_api):
     assert response.json()["type"].endswith("/user-not-found")
 
 
-async def test_an_account_off_the_graph_is_404_without_asking_users_api(api, users_api):
+async def test_an_unknown_account_is_checked_in_users_api(api, users_api):
     response = await api.get(f"/users/{uuid.uuid4()}", headers=signed_in_as(uuid.uuid4()))
 
     assert response.status_code == 404
-    assert users_api.tokens == []
+    assert users_api.tokens == [INTERNAL_TOKEN]
 
 
 async def test_an_account_users_api_no_longer_has_is_404(api, users_api):
@@ -203,3 +204,69 @@ async def test_suggested_accounts_are_not_read_as_a_profile(api, users_api):
     response = await api.get("/users/suggested", headers=signed_in_as(uuid.uuid4()))
 
     assert response.status_code == 200
+
+
+@pytest.mark.parametrize("visibility", ["public", "protected"])
+async def test_e2_h10_ca6_opens_a_new_account_from_both_profile_endpoints(
+    api, users_api, visibility
+):
+    import asyncio
+
+    viewer, owner = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(viewer)
+    users_api.has(owner, visibility=visibility)
+    header, posts = await asyncio.gather(
+        api.get(f"/users/{owner}", headers=signed_in_as(viewer)),
+        api.get(f"/users/{owner}/posts", headers=signed_in_as(viewer)),
+    )
+    assert header.status_code == 200
+    assert header.json()["handle"] == handle_of(owner)
+    assert header.json()["followersCount"] == 0
+    assert header.json()["isPrivate"] == (visibility == "protected")
+    assert posts.status_code == (403 if visibility == "protected" else 200)
+    if visibility == "public":
+        assert posts.json()["items"] == []
+
+
+async def test_e2_h10_ca6_missing_profile_dependency_failure_is_503(api, users_api):
+    users_api.down = True
+    response = await api.get(f"/users/{uuid.uuid4()}", headers=signed_in_as(uuid.uuid4()))
+    assert response.status_code == 503
+
+
+async def test_e2_h10_ca6_deleted_profile_is_not_recreated(api, users_api):
+    from sqlalchemy import update
+
+    from posts_api.infrastructure.database.models import UserProfileModel
+
+    owner = uuid.uuid4()
+    await given_a_profile(owner)
+    users_api.has(owner)
+    async with app.state.session_factory() as session:
+        await session.execute(
+            update(UserProfileModel)
+            .where(UserProfileModel.id == owner)
+            .values(deleted_at=datetime.now(UTC))
+        )
+        await session.commit()
+    response = await api.get(f"/users/{owner}", headers=signed_in_as(uuid.uuid4()))
+    assert response.status_code == 404
+    assert users_api.tokens == []
+
+
+async def test_e2_h10_ca6_existing_profile_counters_and_visibility_are_preserved(api, users_api):
+    from sqlalchemy import update
+
+    from posts_api.infrastructure.database.models import UserProfileModel
+
+    owner = uuid.uuid4()
+    await given_a_profile(owner, visibility="protected")
+    users_api.has(owner, visibility="public")
+    async with app.state.session_factory() as session:
+        await session.execute(
+            update(UserProfileModel).where(UserProfileModel.id == owner).values(followers_count=7)
+        )
+        await session.commit()
+    response = await api.get(f"/users/{owner}", headers=signed_in_as(uuid.uuid4()))
+    assert response.json()["followersCount"] == 7
+    assert response.json()["isPrivate"] is True
