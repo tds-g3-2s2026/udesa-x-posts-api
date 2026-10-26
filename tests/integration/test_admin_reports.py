@@ -7,9 +7,8 @@ import httpx
 import pytest
 from sqlalchemy import select, update
 
-from posts_api.api import admin_posts
 from posts_api.api.deps import get_users_api
-from posts_api.infrastructure.database.models import ReportModel, UserProfileModel
+from posts_api.infrastructure.database.models import OutboxModel, ReportModel, UserProfileModel
 from posts_api.infrastructure.users_api.account_review import build_users_api_client
 from posts_api.main import app
 from tests.conftest import issue_token, requires_services
@@ -176,11 +175,26 @@ class FakeUsersApi:
         self.calls: list[tuple[str, str, str | None]] = []
         # A status code, or "down" for a users-api that does not answer at all.
         self.answer: int | str = 204
+        self.identity_answer = None
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.calls.append(
             (request.method, request.url.path, request.headers.get("X-Internal-Token"))
         )
+        if request.method == "GET":
+            if self.identity_answer == "down":
+                raise httpx.ConnectError("users-api is down", request=request)
+            if isinstance(self.identity_answer, int):
+                return httpx.Response(self.identity_answer)
+            body = (
+                self.identity_answer
+                if self.identity_answer is not None
+                else {
+                    "id": str(ADMIN),
+                    "email": "moderador@udesa.edu.ar",
+                }
+            )
+            return httpx.Response(200, json=body)
         if self.answer == "down":
             raise httpx.ConnectError("users-api is down", request=request)
         return httpx.Response(self.answer)
@@ -251,8 +265,10 @@ async def test_e5_h7_ca2_dismiss_marks_pending_reports_and_keeps_the_account(api
     assert resolved == ("resolved", None, None)
     assert [(status, by) for status, by, _ in dismissed] == [("dismissed", ADMIN)] * 2
     assert all(at >= before for _, _, at in dismissed)
-    # Released, not sanctioned: the only call is the lift, with the shared secret.
-    assert users_api.calls == [("DELETE", f"/internal/users/{target}/review", "secreto")]
+    assert users_api.calls == [
+        ("GET", f"/internal/administrators/{ADMIN}/identity", "secreto"),
+        ("DELETE", f"/internal/users/{target}/review", "secreto"),
+    ]
     assert (await cases(api)).json()["items"] == []
 
 
@@ -300,7 +316,7 @@ async def test_a_case_stays_open_when_users_api_does_not_answer(api, users_api):
     assert users_of(await cases(api)) == [str(target)]
     # Tried once more before giving up, as every call between services does.
     assert users_api.lifts_of(target) == 2
-    assert not [one for one in admin_posts.audit_log.entries if one.target_id == target]
+    assert await audit_events() == []
 
 
 async def test_an_account_users_api_no_longer_has_is_closed_anyway(api, users_api):
@@ -333,11 +349,13 @@ async def test_closing_a_case_leaves_an_audit_entry(api, users_api):
 
     await close(api, "dismiss", target)
 
-    # The log is shared by the whole process: the entry is found by its target.
-    [entry] = [one for one in admin_posts.audit_log.entries if one.target_id == target]
-    assert entry.actor_id == ADMIN
-    assert (entry.action, entry.target_type) == ("report.dismissed", "user")
-    assert entry.details == {"reports": 2}
+    [entry] = await audit_events()
+    assert entry["data"]["actor_id"] == str(ADMIN)
+    assert entry["data"]["actor_email"] == "moderador@udesa.edu.ar"
+    assert entry["data"]["action"] == "report.dismissed"
+    assert entry["data"]["target_type"] == "user"
+    assert entry["data"]["target_id"] == str(target)
+    assert entry["data"]["details"] == {"reports_count": 2}
 
 
 async def test_closing_a_case_with_nothing_pending_does_not_reach_users_api(api, users_api):
@@ -355,3 +373,12 @@ async def test_e5_h7_a_user_token_cannot_close_cases(api, users_api, action):
 
     assert response.status_code == 403
     assert await statuses_of(target) == {"pending"}
+
+
+async def audit_events():
+    async with app.state.session_factory() as session:
+        return list(
+            await session.scalars(
+                select(OutboxModel.payload).where(OutboxModel.type == "admin.action_recorded.v1")
+            )
+        )

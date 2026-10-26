@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:udesa-x:eventos:admin.action_recorded.v1",
+  "title": "admin.action_recorded.v1",
+  "description": "Acción administrativa confirmada en posts-api. users-api conserva el registro histórico.",
+  "type": "object",
+  "required": [
+    "specversion",
+    "id",
+    "source",
+    "type",
+    "time",
+    "data"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "specversion": {
+      "const": "1.0"
+    },
+    "id": {
+      "description": "Identificador único del evento. El consumidor lo usa para descartar repetidos.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "source": {
+      "const": "posts-api"
+    },
+    "type": {
+      "const": "admin.action_recorded.v1"
+    },
+    "time": {
+      "description": "Instante en que se confirmó la acción administrativa.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "actor_id",
+        "actor_email",
+        "action",
+        "target_type",
+        "target_id",
+        "details"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "actor_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actor_email": {
+          "type": "string",
+          "format": "email"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "report.dismissed",
+            "report.resolved"
+          ]
+        },
+        "target_type": {
+          "const": "user"
+        },
+        "target_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "details": {
+          "type": "object",
+          "required": [
+            "reports_count"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "reports_count": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "specversion": "1.0",
+      "id": "0199f3c3-6d7e-7f80-a192-0b1c2d3e4f56",
+      "source": "posts-api",
+      "type": "admin.action_recorded.v1",
+      "time": "2026-10-24T10:20:45Z",
+      "data": {
+        "actor_id": "7a1d3c9b-2e4f-4a6b-8d0c-1f3e5a7b9c2d",
+        "actor_email": "moderador@udesa.edu.ar",
+        "action": "report.resolved",
+        "target_type": "user",
+        "target_id": "a17e9ab2-8d4a-4d76-81af-fb323d371bb0",
+        "details": {
+          "reports_count": 2
+        }
+      }
+    }
+  ]
+}

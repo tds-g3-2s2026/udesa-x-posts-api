@@ -17,6 +17,7 @@ def _validator(name: str) -> Draft202012Validator:
 
 USER_DELETED = _validator("user.deleted.v1")
 FOLLOW_CREATED = _validator("follow.created.v1")
+ADMIN_ACTION_RECORDED = _validator("admin.action_recorded.v1")
 
 
 def user_deleted(

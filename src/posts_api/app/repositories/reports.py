@@ -71,6 +71,15 @@ class ReportRepository:
         )
         return found.scalar_one()
 
+    async def has_pending(self, target_id: uuid.UUID) -> bool:
+        return await self._session.scalar(
+            select(
+                select(ReportModel.id)
+                .where(ReportModel.target_id == target_id, ReportModel.status == PENDING)
+                .exists()
+            )
+        )
+
     async def close_pending(
         self,
         target_id: uuid.UUID,
