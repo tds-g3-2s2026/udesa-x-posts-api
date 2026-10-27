@@ -11,10 +11,10 @@ Genera un informe técnico de revisión para que un integrante del equipo decida
 
 1. **Diff completo**: `git diff main...HEAD`
 2. **Issue asociada**: Criterios de Aceptación (CA) y alcance.
-3. **Descripción del PR**: Debe incluir la sección **"Explicación de la implementación"**.
+3. **Descripción del PR**: la explicación en texto corrido que pide `.github/PULL_REQUEST_TEMPLATE.md`.
 4. **Reglas del repo**: `AGENTS.md` y guías en `docs/`.
 
-> **Comprobación inicial obligatoria**: Si la sección *"Explicación de la implementación"* no existe o está vacía, rechazar el PR inmediatamente indicando que es obligatoria para iniciar la revisión.
+> **Comprobación inicial obligatoria**: Si la descripción está vacía o no explica qué problema había, cómo se resolvió y por qué, pedirla antes de revisar el código: sin explicación el PR no se revisa.
 
 ## Checklist de revisión
 
@@ -42,6 +42,8 @@ Genera un informe técnico de revisión para que un integrante del equipo decida
 - Sin dependencias externas ni patrones nuevos sin ADR aprobado en `docs/adr/`.
 - Nombres de ramas (`feature-<nombre>`, `fix-<nombre>`, `chore-<nombre>`) e issue vinculada.
 - Código e identificadores en inglés; documentación, commits y PR en español.
+- La documentación afectada se actualizó en el mismo PR.
+- Si el PR lleva la etiqueta `autoaprobado`, que cumpla las cuatro preguntas del ADR-022 de `udesa-x-platform`. Si no las cumple, es un bloqueante aunque ya esté mergeado.
 
 ### 6. Comprensibilidad y Simplicidad
 - Sin abstracciones prematuras ni capas de indirección innecesarias.
@@ -52,7 +54,7 @@ Genera un informe técnico de revisión para que un integrante del equipo decida
 ```markdown
 ## Revisión de PR #<número> - <título>
 
-**Veredicto:** [Listo para aprobar | Cambios necesarios | Falta explicación obligatoria]
+**Veredicto:** [Listo para aprobar | Cambios necesarios | Falta la explicación]
 
 ### Bloqueantes
 - [Archivo:Línea] Descripción del problema y por qué bloquea el merge. (O "Ninguno")
