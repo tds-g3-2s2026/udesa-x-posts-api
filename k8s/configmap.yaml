@@ -14,8 +14,9 @@ data:
   S3_REGION: "us-east-2"
   # ADR-011: users-api by its cluster DNS name, never through the gateway.
   USERS_API_URL: "http://users-api"
-  # asyncpg con ssl=verify-full busca ~/.postgresql/root.crt, no el almacén del
-  # sistema: sin esta ruta la conexión a Neon falla antes de abrirse.
-  PGSSLROOTCERT: "/etc/ssl/certs/ca-certificates.crt"
+  # Raíces de la CA de RDS en us-east-2, copiadas en la imagen (ADR-021). Con
+  # ssl=require, asyncpg verifica el certificado contra este archivo; con el
+  # bundle del sistema la conexión a RDS falla con CERTIFICATE_VERIFY_FAILED.
+  PGSSLROOTCERT: "/etc/ssl/certs/rds-ca-us-east-2.pem"
   # Logs y trazas a Grafana Cloud. El token va en el Secret.
   OTEL_EXPORTER_OTLP_ENDPOINT: "https://otlp-gateway-prod-sa-east-1.grafana.net/otlp"
