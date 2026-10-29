@@ -11,7 +11,14 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import AwareDatetime
 
-from posts_api.api.deps import AdministratorDep, ClaimsDep, SessionDep, UsersApiDep
+from posts_api.api.deps import (
+    AdministratorDep,
+    AdministratorDirectoryDep,
+    ClaimsDep,
+    OutboxDep,
+    SessionDep,
+    UsersApiDep,
+)
 from posts_api.api.posts import ServiceDep
 from posts_api.api.schemas.pagination import CursorPage
 from posts_api.api.schemas.posts import AccountCountsSummary, PostMetrics
@@ -21,14 +28,10 @@ from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.posts import PostRepository
 from posts_api.app.repositories.reports import ReportRepository
 from posts_api.app.services.account_counts import AccountCountsService
-from posts_api.app.services.report_cases import InMemoryAuditLog, ReportCaseService
+from posts_api.app.services.report_cases import ReportCaseService
 from posts_api.infrastructure.users_api.account_review import HttpAccountReview
 
 router = APIRouter(prefix="/admin/posts", tags=["admin"])
-
-# One for the whole process, so every request writes to the same place, until
-# E5-H6 brings the audit table and its `POST /internal/audit` takes this one's place.
-audit_log = InMemoryAuditLog()
 
 
 def get_account_counts_service(session: SessionDep) -> AccountCountsService:
@@ -45,8 +48,10 @@ def get_review_release(users_api: UsersApiDep) -> ReviewRelease:
 def get_report_case_service(
     session: SessionDep,
     release: Annotated[ReviewRelease, Depends(get_review_release)],
+    administrators: AdministratorDirectoryDep,
+    outbox: OutboxDep,
 ) -> ReportCaseService:
-    return ReportCaseService(ReportRepository(session), release, audit_log)
+    return ReportCaseService(ReportRepository(session), release, administrators, outbox)
 
 
 ReportCaseServiceDep = Annotated[ReportCaseService, Depends(get_report_case_service)]

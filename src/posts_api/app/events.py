@@ -22,6 +22,7 @@ USER_DELETED = "user.deleted.v1"
 SOURCE = "posts-api"
 SPEC_VERSION = "1.0"
 FOLLOW_CREATED = "follow.created.v1"
+ADMIN_ACTION_RECORDED = "admin.action_recorded.v1"
 
 # What the handler tells the consumer to do with the message: take it off the
 # queue, or send it to the dead letter queue because retrying cannot fix it. A
@@ -107,6 +108,29 @@ def follow_created(
             "follower_id": str(follower_id),
             "follower_handle": follower_handle,
             "followee_id": str(followee_id),
+        },
+        now=now,
+    )
+
+
+def admin_action_recorded(
+    actor_id: uuid.UUID,
+    actor_email: str,
+    action: str,
+    target_id: uuid.UUID,
+    reports_count: int,
+    *,
+    now: datetime,
+) -> Event:
+    return build_event(
+        ADMIN_ACTION_RECORDED,
+        {
+            "actor_id": str(actor_id),
+            "actor_email": actor_email,
+            "action": action,
+            "target_type": "user",
+            "target_id": str(target_id),
+            "details": {"reports_count": reports_count},
         },
         now=now,
     )
