@@ -91,13 +91,16 @@ incluiría esa plantilla.
 Las imágenes de los posts van a un bucket privado de S3. Se configuran con `S3_BUCKET`,
 `S3_REGION` (por defecto `us-east-1`) e `IMAGE_URL_EXPIRY_SECONDS` (por defecto `3600`, lo que
 dura la URL firmada de lectura). Las credenciales no son variables del servicio: el SDK las toma
-del entorno. En el cluster llegan por el Secret (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` y
-`AWS_SESSION_TOKEN`, de un usuario de IAM con acceso al bucket) y son temporales: al vencer, subir
-imágenes falla con `503 images-unavailable` y las URLs de lectura dejan de abrir, hasta cargar
-otras credenciales y volver a desplegar. Lo
-recomendable a futuro es un rol de IAM asociado al pod, sin claves. Sin `S3_BUCKET` el servicio arranca y atiende todo lo demás, pero
+del entorno. En el cluster no hay claves: el pod asume el rol de IAM `tds-group-3-s3-role`, que
+solo puede leer, escribir y borrar en el bucket. `k8s/deployment.yaml` monta el token que
+EKS firma para el pod (audiencia `sts.amazonaws.com`) y declara `AWS_ROLE_ARN` y
+`AWS_WEB_IDENTITY_TOKEN_FILE`; el SDK cambia ese token por credenciales temporales y las
+renueva solo. No hay nada que cargar en los GitHub Secrets ni que rotar. Se declara en el
+Deployment y no con un ServiceAccount anotado porque el pipeline no aplica ServiceAccounts y el
+namespace no deja crearlos. Sin `S3_BUCKET` el servicio arranca y atiende todo lo demás, pero
 publicar un post con imágenes responde `503 images-unavailable`. `S3_ENDPOINT_URL` solo sirve
-para apuntar a un servidor compatible con S3 en desarrollo.
+para apuntar a un servidor compatible con S3 en desarrollo. Para probar contra el bucket real
+desde una máquina local hacen falta credenciales propias en el entorno.
 `envFrom` se lee al crear el contenedor: el pipeline pone el hash del ConfigMap y del Secret
 en el pod template, así que un cambio solo de configuración también reemplaza los pods. La
 pública corresponde a la privada estable de users; los tokens antiguos sin `iss` se rechazan.
