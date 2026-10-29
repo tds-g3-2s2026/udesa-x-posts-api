@@ -30,6 +30,18 @@ spec:
                 name: posts-api-config
             - secretRef:
                 name: posts-api-secret
+          # Acceso a S3 con el rol de IAM del grupo, sin claves (ver "volumes"). El SDK de
+          # AWS lee estas dos variables, cambia el token por credenciales temporales y las
+          # renueva solo.
+          env:
+            - name: AWS_ROLE_ARN
+              value: arn:aws:iam::172786533418:role/tds-group-3-s3-role
+            - name: AWS_WEB_IDENTITY_TOKEN_FILE
+              value: /var/run/secrets/eks.amazonaws.com/serviceaccount/token
+          volumeMounts:
+            - name: aws-iam-token
+              mountPath: /var/run/secrets/eks.amazonaws.com/serviceaccount
+              readOnly: true
           livenessProbe:
             httpGet:
               path: /livez
@@ -53,3 +65,15 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+      # El token con el que el pod se identifica ante AWS para asumir el rol. EKS suele
+      # inyectarlo desde la anotación del ServiceAccount, pero el pipeline no aplica
+      # ServiceAccounts y este namespace no deja crearlos, así que se declara acá. La trust
+      # policy del rol solo exige la audiencia sts.amazonaws.com, no un ServiceAccount.
+      volumes:
+        - name: aws-iam-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: sts.amazonaws.com
+                  expirationSeconds: 86400
+                  path: token

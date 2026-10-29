@@ -8,8 +8,8 @@ data:
   FOLLOW_RATE_LIMIT: "50"
   FOLLOW_RATE_WINDOW_SECONDS: "3600"
   JWT_ISSUER: "users-api"
-  # Bucket privado de las imagenes de los posts. Las credenciales no van aca: el SDK
-  # las toma del entorno del pod.
+  # Bucket privado de las imagenes de los posts. Las credenciales no van aca ni en el
+  # Secret: el pod asume el rol de IAM que declara k8s/deployment.yaml.
   S3_BUCKET: "tds-group-3-media"
   S3_REGION: "us-east-2"
   # ADR-011: users-api by its cluster DNS name, never through the gateway.
