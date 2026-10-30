@@ -22,6 +22,7 @@ from posts_api.api.follows import router as follows_router
 from posts_api.api.health import router as health_router
 from posts_api.api.internal import router as internal_router
 from posts_api.api.likes import router as likes_router
+from posts_api.api.mutes import router as mutes_router
 from posts_api.api.posts import router as posts_router
 from posts_api.api.profiles import router as profiles_router
 from posts_api.api.reports import router as reports_router
@@ -114,5 +115,6 @@ app.include_router(likes_router, prefix=API_PREFIX)
 app.include_router(retweets_router, prefix=API_PREFIX)
 app.include_router(feed_router, prefix=API_PREFIX)
 app.include_router(blocks_router, prefix=API_PREFIX)
+app.include_router(mutes_router, prefix=API_PREFIX)
 app.include_router(reports_router, prefix=API_PREFIX)
 app.include_router(admin_posts_router, prefix=API_PREFIX)
