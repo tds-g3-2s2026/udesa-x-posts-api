@@ -154,6 +154,28 @@ class BlockModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class MuteModel(Base):
+    """One account muting another. Unlike a block it only changes what the muter
+    sees: the follow stays and the muted account is never told."""
+
+    __tablename__ = "mutes"
+    __table_args__ = (
+        CheckConstraint("muter_id <> muted_id", name="ck_mutes_not_self"),
+        # Matches the muted-accounts listing: the owner, then the cursor's order
+        # column and tiebreak. "Did this viewer mute that author", which the
+        # feed asks, is the primary key.
+        Index("ix_mutes_muter_cursor", "muter_id", "created_at", "muted_id"),
+    )
+
+    muter_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("user_profiles.id"), primary_key=True
+    )
+    muted_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("user_profiles.id"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class PostModel(Base):
     __tablename__ = "posts"
     __table_args__ = (
