@@ -15,7 +15,7 @@ import base64
 import binascii
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import ColumnElement, Select, tuple_
 
@@ -59,8 +59,12 @@ class Cursor:
         try:
             raw = base64.urlsafe_b64decode(value.encode()).decode()
             at_raw, tiebreak_raw = raw.split("|")
-            return cls(at=datetime.fromisoformat(at_raw), tiebreak=uuid.UUID(tiebreak_raw))
-        except (ValueError, binascii.Error) as error:
+            at = datetime.fromisoformat(at_raw)
+            if at.tzinfo is None or at.utcoffset() is None:
+                raise ValueError("Cursor timestamp requires a timezone")
+            at = at.astimezone(UTC)
+            return cls(at=at, tiebreak=uuid.UUID(tiebreak_raw))
+        except (ValueError, OverflowError, binascii.Error) as error:
             raise invalid_cursor() from error
 
 

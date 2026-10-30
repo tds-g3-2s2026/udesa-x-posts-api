@@ -157,6 +157,12 @@ class BlockModel(Base):
 class PostModel(Base):
     __tablename__ = "posts"
     __table_args__ = (
+        Index(
+            "ix_posts_content_trgm",
+            "content",
+            postgresql_using="gin",
+            postgresql_ops={"content": "gin_trgm_ops"},
+        ),
         # Serves both "this author's posts" and the feed's per-author lookup
         # while it merges everyone the viewer follows, ordered the same way
         # the cursor reads: created_at, then id as the tiebreak. A plain index
