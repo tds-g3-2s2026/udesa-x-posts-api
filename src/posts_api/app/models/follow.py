@@ -126,3 +126,12 @@ class BlockedAccount:
     id: uuid.UUID
     handle: str | None
     created_at: datetime
+
+
+@dataclass(frozen=True)
+class MutedAccount:
+    """One row of the muted-accounts screen: who, and since when."""
+
+    id: uuid.UUID
+    handle: str | None
+    created_at: datetime
