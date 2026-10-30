@@ -303,3 +303,49 @@ async def test_closing_an_account_takes_its_mutes_in_both_directions(api):
     assert not await is_muted(muting_it, leaving)
     listed = await api.get("/mutes", headers=signed_in_as(muting_it))
     assert listed.json()["items"] == []
+
+
+async def test_e3_h10_ca4_a_follow_from_a_muted_account_queues_no_event(api):
+    followed, follower = uuid.uuid4(), uuid.uuid4()
+    for account in (followed, follower):
+        await given_a_profile(account)
+    await mute(api, followed, follower)
+    before = await outbox_size()
+
+    await follow(api, follower, followed)
+
+    assert await is_following(follower, followed)
+    assert await outbox_size() == before
+
+
+async def test_a_follow_still_queues_its_event_when_only_the_follower_muted(api):
+    followed, follower = uuid.uuid4(), uuid.uuid4()
+    for account in (followed, follower):
+        await given_a_profile(account)
+    await mute(api, follower, followed)
+    before = await outbox_size()
+
+    await follow(api, follower, followed)
+
+    assert await outbox_size() == before + 1
+
+
+async def test_approving_a_request_from_a_muted_account_queues_no_event(api):
+    owner, requester = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(owner, visibility="protected")
+    await given_a_profile(requester)
+    # A protected token, or this call would turn the stored profile public again.
+    protected = signed_in_as(owner, profile_visibility="protected")
+    muted = await api.post(f"/users/{requester}/mute", headers=protected)
+    assert muted.status_code == 204
+    asked = await api.post(f"/users/{owner}/follow", headers=signed_in_as(requester))
+    assert asked.status_code == 202
+    pending = await api.get("/follow-requests", headers=protected)
+    request_id = pending.json()["items"][0]["id"]
+    before = await outbox_size()
+
+    approved = await api.post(f"/follow-requests/{request_id}/approve", headers=signed_in_as(owner))
+
+    assert approved.status_code == 204
+    assert await is_following(requester, owner)
+    assert await outbox_size() == before

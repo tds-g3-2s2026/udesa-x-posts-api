@@ -9,6 +9,7 @@ from posts_api.app.models.follow import Account, FollowRequestStatus, PendingFol
 from posts_api.app.pagination import DEFAULT_PAGE_SIZE, Cursor
 from posts_api.app.repositories.follow_requests import FollowRequestRepository
 from posts_api.app.repositories.follows import FollowRepository
+from posts_api.app.repositories.mutes import MuteRepository
 from posts_api.app.repositories.outbox import OutboxRepository
 
 
@@ -18,10 +19,12 @@ class FollowRequestService:
         requests: FollowRequestRepository,
         follows: FollowRepository,
         outbox: OutboxRepository,
+        mutes: MuteRepository,
     ) -> None:
         self._requests = requests
         self._follows = follows
         self._outbox = outbox
+        self._mutes = mutes
 
     async def pending_for(
         self, owner: Account, *, cursor: str | None = None
@@ -54,6 +57,9 @@ class FollowRequestService:
         await self._requests.resolve(request_id, FollowRequestStatus.APPROVED)
         await self._follows.add_follow(request.requester_id, owner.id)
         await self._follows.move_counters(request.requester_id, owner.id, by=1)
+        # Also like a direct follow: an account the owner muted gets no notice.
+        if await self._mutes.is_muted(owner.id, request.requester_id):
+            return
         # The same event as a direct follow: for whoever is followed, a request
         # they approved is a new follower like any other.
         requester = await self._follows.find_profile(request.requester_id)

@@ -8,6 +8,7 @@ from posts_api.api.schemas.follow_requests import FollowRequestSummary
 from posts_api.api.schemas.pagination import CursorPage
 from posts_api.app.repositories.follow_requests import FollowRequestRepository
 from posts_api.app.repositories.follows import FollowRepository
+from posts_api.app.repositories.mutes import MuteRepository
 from posts_api.app.services.follow_requests import FollowRequestService
 
 router = APIRouter(prefix="/follow-requests", tags=["follow-requests"])
@@ -16,7 +17,9 @@ router = APIRouter(prefix="/follow-requests", tags=["follow-requests"])
 def get_follow_request_service(session: SessionDep, outbox: OutboxDep) -> FollowRequestService:
     # Every collaborator shares the session of the request, so approving writes
     # the answer, the relationship, the counters and the event in one transaction.
-    return FollowRequestService(FollowRequestRepository(session), FollowRepository(session), outbox)
+    return FollowRequestService(
+        FollowRequestRepository(session), FollowRepository(session), outbox, MuteRepository(session)
+    )
 
 
 ServiceDep = Annotated[FollowRequestService, Depends(get_follow_request_service)]
