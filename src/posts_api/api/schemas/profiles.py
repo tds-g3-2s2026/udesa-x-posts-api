@@ -30,6 +30,8 @@ class ProfileSummary(BaseModel):
     # with `isFollowedByMe` the screen knows both.
     is_private: bool = Field(serialization_alias="isPrivate")
     is_followed_by_me: bool = Field(serialization_alias="isFollowedByMe")
+    # Only the caller learns it: the muted account sees the same header as before.
+    is_muted_by_me: bool = Field(serialization_alias="isMutedByMe")
 
     @classmethod
     def of(cls, profile: Profile) -> "ProfileSummary":
@@ -44,4 +46,5 @@ class ProfileSummary(BaseModel):
             following_count=profile.following_count,
             is_private=profile.is_private,
             is_followed_by_me=profile.followed_by_viewer,
+            is_muted_by_me=profile.muted_by_viewer,
         )

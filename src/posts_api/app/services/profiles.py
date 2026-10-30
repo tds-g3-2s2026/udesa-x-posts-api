@@ -9,6 +9,7 @@ from posts_api.app.models.post import PostWithAuthor
 from posts_api.app.models.profile import AccountDetails, Profile
 from posts_api.app.repositories.blocks import BlockRepository
 from posts_api.app.repositories.follows import FollowRepository
+from posts_api.app.repositories.mutes import MuteRepository
 from posts_api.app.repositories.profile_posts import ProfilePostRepository
 from posts_api.app.repositories.user_directory import UserDirectory, UserDirectoryUnavailableError
 from posts_api.app.services.post_images import PostImages
@@ -31,12 +32,14 @@ class ProfileService:
         directory: UserDirectory,
         posts: ProfilePostRepository,
         images: PostImages,
+        mutes: MuteRepository,
     ) -> None:
         self._follows = follows
         self._blocks = blocks
         self._directory = directory
         self._posts = posts
         self._images = images
+        self._mutes = mutes
 
     async def profile_of(self, user_id: uuid.UUID, viewer: Account) -> Profile:
         """The header of `user_id`'s profile, as `viewer` gets to see it.
@@ -67,6 +70,7 @@ class ProfileService:
             followers_count=target.followers_count,
             following_count=target.following_count,
             followed_by_viewer=await self._follows.is_following(viewer.id, user_id),
+            muted_by_viewer=await self._mutes.is_muted(viewer.id, user_id),
             details=details,
         )
 

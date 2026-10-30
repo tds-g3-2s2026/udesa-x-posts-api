@@ -16,6 +16,7 @@ from posts_api.api.schemas.pagination import CursorPage
 from posts_api.api.schemas.profiles import ProfileSummary
 from posts_api.app.repositories.blocks import BlockRepository
 from posts_api.app.repositories.follows import FollowRepository
+from posts_api.app.repositories.mutes import MuteRepository
 from posts_api.app.repositories.profile_posts import ProfilePostRepository
 from posts_api.app.repositories.user_directory import UserDirectory
 from posts_api.app.services.profiles import ProfileService
@@ -39,6 +40,7 @@ def get_profile_service(
         directory,
         ProfilePostRepository(session),
         images,
+        MuteRepository(session),
     )
 
 

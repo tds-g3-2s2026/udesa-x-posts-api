@@ -2,13 +2,27 @@
 
 import uuid
 
-from sqlalchemy import delete, select
+from sqlalchemy import ColumnElement, delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from posts_api.app.models.follow import MutedAccount
 from posts_api.app.pagination import DEFAULT_PAGE_SIZE, Cursor, apply_cursor, page_of
 from posts_api.infrastructure.database.models import MuteModel, UserProfileModel
+
+
+def muted_by_viewer(viewer_id: uuid.UUID, account_id: InstrumentedAttribute) -> ColumnElement[bool]:
+    """Whether `viewer_id` muted the account in `account_id`, as one more condition.
+
+    For the feed: it filters inside the same statement and before paging, like
+    `visible_to`, so a page is not left short by rows removed afterwards.
+    """
+    return (
+        select(MuteModel.muted_id)
+        .where(MuteModel.muter_id == viewer_id, MuteModel.muted_id == account_id)
+        .exists()
+    )
 
 
 class MuteRepository:
@@ -29,6 +43,9 @@ class MuteRepository:
         await self._session.execute(
             delete(MuteModel).where(MuteModel.muter_id == muter_id, MuteModel.muted_id == muted_id)
         )
+
+    async def is_muted(self, muter_id: uuid.UUID, muted_id: uuid.UUID) -> bool:
+        return await self._session.get(MuteModel, (muter_id, muted_id)) is not None
 
     async def muted_by(
         self,

@@ -38,4 +38,5 @@ class Profile:
     followers_count: int
     following_count: int
     followed_by_viewer: bool
+    muted_by_viewer: bool
     details: AccountDetails | None
