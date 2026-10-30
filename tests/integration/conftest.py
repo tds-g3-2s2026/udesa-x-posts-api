@@ -11,6 +11,7 @@ from posts_api.infrastructure.database.models import (
     FollowModel,
     FollowRequestModel,
     LikeModel,
+    MuteModel,
     OutboxModel,
     PostMediaModel,
     PostModel,
@@ -37,6 +38,7 @@ async def api():
             await session.execute(delete(LikeModel))
             await session.execute(delete(RetweetModel))
             await session.execute(delete(BlockModel))
+            await session.execute(delete(MuteModel))
             await session.execute(delete(FollowRequestModel))
             await session.execute(delete(FollowModel))
             # The images hang from the posts.
