@@ -7,7 +7,8 @@ event, so the muted account has no way to find out.
 import uuid
 
 from posts_api.app.errors import ProblemError
-from posts_api.app.models.follow import Account
+from posts_api.app.models.follow import Account, MutedAccount
+from posts_api.app.pagination import Cursor
 from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.mutes import MuteRepository
 
@@ -41,3 +42,10 @@ class MuteService:
     async def unmute(self, muter: Account, muted_id: uuid.UUID) -> None:
         """Lift the mute. Unmuting an account that was not muted changes nothing."""
         await self._mutes.remove(muter.id, muted_id)
+
+    async def muted_by(
+        self, owner: Account, *, cursor: str | None = None
+    ) -> tuple[list[MutedAccount], str | None]:
+        await self._follows.ensure_profile(owner)
+        decoded = Cursor.decode(cursor) if cursor is not None else None
+        return await self._mutes.muted_by(owner.id, cursor=decoded)
