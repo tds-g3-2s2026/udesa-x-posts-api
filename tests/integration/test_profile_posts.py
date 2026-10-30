@@ -164,11 +164,11 @@ async def test_an_account_the_viewer_blocked_is_404_too(api):
     assert response.status_code == 404
 
 
-async def test_an_unknown_account_is_404(api):
+async def test_an_unresolved_account_is_503_when_identity_is_unavailable(api):
     response = await api.get(f"/users/{uuid.uuid4()}/posts", headers=signed_in_as(uuid.uuid4()))
 
-    assert response.status_code == 404
-    assert response.json()["type"].endswith("/user-not-found")
+    assert response.status_code == 503
+    assert response.json()["type"].endswith("/profile-unavailable")
 
 
 async def test_replies_stay_out_of_the_profile(api):
