@@ -40,3 +40,6 @@ class Profile:
     followed_by_viewer: bool
     muted_by_viewer: bool
     details: AccountDetails | None
+    # Signed for this read, `None` when the account has none.
+    avatar_url: str | None = None
+    cover_url: str | None = None

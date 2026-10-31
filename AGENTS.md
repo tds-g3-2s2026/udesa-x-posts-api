@@ -11,8 +11,8 @@ E3-H1 a H10 y E3-H5.
 - Lenguaje y runtime: Python 3.13 / FastAPI, Uvicorn
 - Gestor de paquetes: uv
 - Persistencia y migraciones: PostgreSQL (SQLAlchemy 2 async con asyncpg) / Alembic
-- Imágenes de los posts: bucket privado de S3 vía `aioboto3`, detrás de la interfaz
-  `ImageStorage`; el multipart se lee a mano con `python-multipart` (ADR-018)
+- Imágenes de los posts, foto de perfil y portada: bucket privado de S3 vía `aioboto3`, detrás
+  de la interfaz `ImageStorage`; el multipart se lee a mano con `python-multipart` (ADR-018)
 - Mensajería: RabbitMQ con `aio-pika` (ADR-019). Consume `user.deleted.v1` en la cola
   `posts-api` (`infrastructure/rabbitmq/`), con su DLQ `posts-api.dlq`
 - Cache y estado efímero: Redis `/1` (rate limit de follows y posts). Lee además, en solo

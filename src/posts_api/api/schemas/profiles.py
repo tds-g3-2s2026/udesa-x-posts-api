@@ -1,4 +1,4 @@
-"""What another user's profile header looks like on the wire (E2-H14)."""
+"""What a user's profile header looks like on the wire."""
 
 import uuid
 from datetime import datetime
@@ -19,10 +19,10 @@ class ProfileSummary(BaseModel):
     handle: str | None
     display_name: str | None = Field(serialization_alias="displayName")
     bio: str | None
-    # The profile photo is E1-H8, not built yet. Always null for now, so the
-    # screen shows the default avatar and can swap the real one in later
-    # without a new shape.
+    # Signed URLs that expire in an hour, null for an account without one. A
+    # null photo is drawn as the default avatar.
     avatar_url: str | None = Field(default=None, serialization_alias="avatarUrl")
+    cover_url: str | None = Field(default=None, serialization_alias="coverUrl")
     created_at: datetime | None = Field(serialization_alias="createdAt")
     followers_count: int = Field(serialization_alias="followersCount")
     following_count: int = Field(serialization_alias="followingCount")
@@ -47,4 +47,6 @@ class ProfileSummary(BaseModel):
             is_private=profile.is_private,
             is_followed_by_me=profile.followed_by_viewer,
             is_muted_by_me=profile.muted_by_viewer,
+            avatar_url=profile.avatar_url,
+            cover_url=profile.cover_url,
         )

@@ -39,12 +39,14 @@ def _to_post_with_author(
     author_deleted_at: datetime | None,
     liked: bool,
     retweeted: bool,
+    avatar_key: str | None = None,
 ) -> PostWithAuthor:
     return PostWithAuthor(
         id=post.id,
         author_id=post.author_id,
-        # A closed account does not keep its handle on what it left behind.
+        # A closed account does not keep its handle, nor its photo, on what it left behind.
         author_handle=None if author_deleted_at else handle,
+        author_avatar_key=None if author_deleted_at else avatar_key,
         author_deleted=author_deleted_at is not None,
         content=None if post.deleted_at else post.content,
         deleted=post.deleted_at is not None,
@@ -155,6 +157,7 @@ class PostRepository:
                 UserProfileModel.deleted_at,
                 liked_by(viewer_id),
                 retweeted_by(viewer_id),
+                UserProfileModel.avatar_key,
             )
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
             .where(
@@ -172,8 +175,8 @@ class PostRepository:
         row = found.first()
         if row is None:
             return None
-        post, handle, author_deleted_at, liked, retweeted = row
-        return _to_post_with_author(post, handle, author_deleted_at, liked, retweeted)
+        post, handle, author_deleted_at, liked, retweeted, avatar_key = row
+        return _to_post_with_author(post, handle, author_deleted_at, liked, retweeted, avatar_key)
 
     async def lock_visible(
         self, post_id: uuid.UUID, *, viewer_id: uuid.UUID
@@ -226,6 +229,7 @@ class PostRepository:
                 UserProfileModel.deleted_at,
                 liked_by(viewer_id),
                 retweeted_by(viewer_id),
+                UserProfileModel.avatar_key,
             )
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
             .where(
@@ -250,8 +254,8 @@ class PostRepository:
         )
         found = await self._session.execute(statement)
         replies = [
-            _to_post_with_author(post, handle, author_deleted_at, liked, retweeted)
-            for post, handle, author_deleted_at, liked, retweeted in found.all()
+            _to_post_with_author(post, handle, author_deleted_at, liked, retweeted, avatar_key)
+            for post, handle, author_deleted_at, liked, retweeted, avatar_key in found.all()
         ]
         return page_of(
             replies, limit=limit, at=lambda one: one.created_at, tiebreak=lambda one: one.id
