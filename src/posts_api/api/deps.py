@@ -23,12 +23,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.app.errors import ProblemError
 from posts_api.app.models.follow import Account, ProfileVisibility
+from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.image_storage import ImageStorage
 from posts_api.app.repositories.outbox import OutboxRepository
 from posts_api.app.repositories.post_media import PostMediaRepository
+from posts_api.app.repositories.profile_images import ProfileImageRepository
 from posts_api.app.repositories.revocations import RevocationStore
 from posts_api.app.security import decode_access_token
 from posts_api.app.services.post_images import PostImages
+from posts_api.app.services.profile_images import ProfileImages
 from posts_api.infrastructure.database.outbox_repository import SqlAlchemyOutboxRepository
 from posts_api.infrastructure.database.session import session_scope
 from posts_api.infrastructure.redis.revocations import RedisRevocationStore
@@ -75,6 +78,14 @@ def get_post_images(session: SessionDep, storage: ImageStorageDep) -> PostImages
 
 
 PostImagesDep = Annotated[PostImages, Depends(get_post_images)]
+
+
+def get_profile_images(session: SessionDep, storage: ImageStorageDep) -> ProfileImages:
+    """What stores the profile photo and cover, and signs them for the profiles that are read."""
+    return ProfileImages(ProfileImageRepository(session), FollowRepository(session), storage)
+
+
+ProfileImagesDep = Annotated[ProfileImages, Depends(get_profile_images)]
 
 
 def get_outbox(session: SessionDep) -> OutboxRepository:

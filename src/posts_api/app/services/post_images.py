@@ -2,6 +2,7 @@
 
 Both halves live together because both need the same pair of collaborators: the
 rows that say which files belong to which post, and the storage that holds them.
+The photo of each post's author is signed here too, in the same pass.
 """
 
 import uuid
@@ -11,7 +12,11 @@ from dataclasses import replace
 from posts_api.app.errors import ProblemError
 from posts_api.app.image_rules import ImageFormat, IncomingImage
 from posts_api.app.models.post import PostImage, PostWithAuthor
-from posts_api.app.repositories.image_storage import ImageStorage, ImageStorageError
+from posts_api.app.repositories.image_storage import (
+    ImageStorage,
+    ImageStorageError,
+    signed_url_or_none,
+)
 from posts_api.app.repositories.post_media import NewMedia, PostMediaRepository, StoredMedia
 
 KEY_PREFIX = "posts"
@@ -61,11 +66,12 @@ class PostImages:
             raise
 
     async def attach(self, posts: list[PostWithAuthor]) -> list[PostWithAuthor]:
-        """The same posts with their images, read with one query for the whole page.
+        """The same posts with their images and their author's photo, one query for the page.
 
         A deleted post keeps its rows but shows none: the files stay where they
         are, the post just no longer says it had them.
         """
+        posts = [await self._with_avatar(one) for one in posts]
         live = {one.id for one in posts if not one.deleted}
         if not live:
             return posts
@@ -80,6 +86,13 @@ class PostImages:
             else:
                 attached.append(replace(post, images=await self._present(rows)))
         return attached
+
+    async def _with_avatar(self, post: PostWithAuthor) -> PostWithAuthor:
+        if post.author_avatar_key is None:
+            return post
+        return replace(
+            post, author_avatar_url=await signed_url_or_none(self._storage, post.author_avatar_key)
+        )
 
     async def _present(self, rows: Sequence[StoredMedia]) -> tuple[PostImage, ...]:
         try:

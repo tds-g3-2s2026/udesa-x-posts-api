@@ -120,6 +120,33 @@ y esquemas del API server: requiere un kubeconfig y acceso de lectura al cluster
 No comprueba la existencia de la imagen, los valores secretos ni la cuota libre.
 El PR requiere aprobación del tutor.
 
+## Foto de perfil y portada
+
+Van al mismo bucket que las imágenes de los posts, bajo `profiles/<id>/avatar/` y
+`profiles/<id>/cover/`, y el perfil guarda solo la clave (`user_profiles.avatar_key` y
+`cover_key`). Las rutas cuelgan de `/users/me`, que el gateway manda a este servicio (`/api/me`
+es de `users-api`):
+
+| Ruta | Qué hace |
+|---|---|
+| `PUT /users/me/avatar` | Sube o reemplaza la foto: `multipart/form-data` con una sola parte `image`, JPG o PNG, hasta 5 MiB. Responde `200 {avatarUrl}`. |
+| `PUT /users/me/cover` | Igual para la portada, hasta 10 MiB. Responde `200 {coverUrl}`. |
+| `DELETE /users/me/avatar`, `DELETE /users/me/cover` | Vuelve a no tener imagen. `204`, también si no había ninguna. |
+
+El formato se decide por los primeros bytes, como en los posts, y el archivo pasa del request a
+un temporal (en disco por encima de 256 KiB) y de ahí a S3 en partes de hasta 1 MiB: nunca está
+entero en memoria. Al reemplazar o borrar, el archivo anterior se borra del bucket después del
+commit; si S3 falla en ese paso queda suelto y se registra un warning, pero el perfil ya cambió.
+Errores: `422 image-format-not-supported`, `422 image-too-large` (el `detail` dice el límite),
+`400 invalid-multipart` (sin parte `image`, con más de una o ilegible) y `503 images-unavailable`.
+
+`GET /users/{id}` trae `avatarUrl` y `coverUrl`, y cada post (feed, `GET /posts/{id}`,
+respuestas y publicaciones del perfil) trae `authorAvatarUrl`, la del autor original en una fila
+de retweet. Son URLs firmadas que vencen como las de los posts; `null` si no hay imagen o la
+cuenta está cerrada, y la app dibuja el avatar por defecto. Si una URL no se puede firmar sale
+`null` en vez de fallar la página. Las listas de seguidores, seguidos y sugeridos siguen con
+`avatarUrl` en `null`.
+
 ## Revocación de sesiones
 
 Un token firmado y vigente no alcanza: `users-api` puede haberlo revocado antes de que venza
@@ -163,7 +190,8 @@ El manejador corre en una sola transacción y se puede repetir sin efecto: la cu
   respuestas;
 - `GET /users/{id}`, sus posts, sus seguidores y a quién sigue, y seguirla responden `404
   user-not-found`, como una cuenta que no existe;
-- las imágenes de sus posts siguen en el bucket: borrarlas queda como mejora.
+- las imágenes de sus posts, su foto y su portada siguen en el bucket: borrarlas queda como
+  mejora.
 
 El filtro está en la consulta y no depende de cuándo llegue el evento a una réplica: desde que
 el manejador commitea, nada la muestra. Antes del evento, lo que sí es inmediato es que sus

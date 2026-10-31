@@ -93,8 +93,8 @@ async def test_e2_h14_ca1_the_profile_carries_what_the_screen_needs(api, users_a
     assert body["followingCount"] == 0
     assert body["isPrivate"] is False
     assert body["isFollowedByMe"] is True
-    # E1-H8 is not built: the screen falls back to the default avatar.
-    assert body["avatarUrl"] is None
+    # Without a photo the screen falls back to the default avatar.
+    assert (body["avatarUrl"], body["coverUrl"]) == (None, None)
 
 
 async def test_e2_h14_ca3_a_protected_account_shows_its_header_and_says_it_is_private(

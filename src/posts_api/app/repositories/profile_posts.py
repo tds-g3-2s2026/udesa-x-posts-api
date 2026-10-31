@@ -88,6 +88,7 @@ class ProfilePostRepository:
                 activity.c.shared_by,
                 liked_by(viewer_id),
                 retweeted_by(viewer_id),
+                UserProfileModel.avatar_key,
             )
             .join(activity, activity.c.post_id == PostModel.id)
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
@@ -128,8 +129,10 @@ class ProfilePostRepository:
                 activity_at=at,
                 retweeted_by=shared_by,
                 retweeter_id=actor if kind else None,
+                # The author of the post, as in the feed: on a retweet, the original's.
+                author_avatar_key=None if closed_at else photo,
             )
-            for post, handle, closed_at, at, kind, actor, shared_by, liked, retweeted in page
+            for post, handle, closed_at, at, kind, actor, shared_by, liked, retweeted, photo in page
         ]
         next_cursor = None
         if len(rows) > limit:

@@ -1,4 +1,4 @@
-"""What an image has to be to go on a post.
+"""What an image has to be to go on a post or on a profile.
 
 Shared by the code that reads the request, which cuts the stream as soon as a
 limit is crossed, and by the service, which enforces the same limits again on
@@ -13,6 +13,23 @@ from posts_api.app.errors import ProblemError
 MAX_IMAGES = 4
 # 1 MiB. A file of exactly this size is accepted; one byte more is refused.
 MAX_IMAGE_BYTES = 1_048_576
+
+POST_TITLE = "No se pudo publicar el post"
+PROFILE_TITLE = "No se pudo actualizar la imagen"
+
+
+@dataclass(frozen=True)
+class ProfileImageKind:
+    """The profile photo or the cover: one file each, with its own limit."""
+
+    name: str
+    max_bytes: int
+    too_large_detail: str
+
+
+# In MiB, like the limit of the images of a post.
+AVATAR = ProfileImageKind("avatar", 5 * 1_048_576, "La foto de perfil puede pesar hasta 5 MB.")
+COVER = ProfileImageKind("cover", 10 * 1_048_576, "La portada puede pesar hasta 10 MB.")
 
 
 @dataclass(frozen=True)
@@ -62,33 +79,32 @@ def too_many_images() -> ProblemError:
     return ProblemError(
         status=422,
         code="too-many-images",
-        title="No se pudo publicar el post",
+        title=POST_TITLE,
         detail="Un post admite hasta 4 imágenes.",
     )
 
 
-def image_too_large() -> ProblemError:
-    return ProblemError(
-        status=422,
-        code="image-too-large",
-        title="No se pudo publicar el post",
-        detail="Cada imagen puede pesar hasta 1 MB.",
-    )
+# The codes are the same for a post and for a profile, so the app tells them
+# apart the same way; the title and the limit in the detail say which one it was.
+def image_too_large(
+    detail: str = "Cada imagen puede pesar hasta 1 MB.", title: str = POST_TITLE
+) -> ProblemError:
+    return ProblemError(status=422, code="image-too-large", title=title, detail=detail)
 
 
-def image_format_not_supported() -> ProblemError:
+def image_format_not_supported(title: str = POST_TITLE) -> ProblemError:
     return ProblemError(
         status=422,
         code="image-format-not-supported",
-        title="No se pudo publicar el post",
+        title=title,
         detail="Solo se aceptan imágenes JPG o PNG.",
     )
 
 
-def invalid_multipart() -> ProblemError:
+def invalid_multipart(title: str = POST_TITLE) -> ProblemError:
     return ProblemError(
         status=400,
         code="invalid-multipart",
-        title="No se pudo publicar el post",
+        title=title,
         detail="No se pudo leer el contenido enviado.",
     )

@@ -71,3 +71,7 @@ class PostWithAuthor:
     author_deleted: bool = False
     # Filled in after the page is read, with one extra query for all its posts.
     images: tuple[PostImage, ...] = ()
+    # Where the author's photo is, read with the post, and the URL signed from
+    # it afterwards. Both `None` without a photo or for a closed account.
+    author_avatar_key: str | None = None
+    author_avatar_url: str | None = None

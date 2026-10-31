@@ -23,6 +23,8 @@ def _to_profile(row: UserProfileModel) -> UserProfile:
         visibility=ProfileVisibility(row.visibility),
         followers_count=row.followers_count,
         following_count=row.following_count,
+        avatar_key=row.avatar_key,
+        cover_key=row.cover_key,
     )
 
 
