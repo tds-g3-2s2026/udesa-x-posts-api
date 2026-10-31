@@ -55,8 +55,11 @@ class S3ImageStorage(ImageStorage):
 
     async def put(self, key: str, body: BinaryIO, *, content_type: str) -> None:
         try:
+            # The file and not its bytes: the SDK reads it in chunks
+            # of at most 1 MiB to sign it and to send it, so a 10 MB cover never
+            # sits whole in memory. It has to be seekable, for the retries.
             await self._client.put_object(
-                Bucket=self._bucket, Key=key, Body=body.read(), ContentType=content_type
+                Bucket=self._bucket, Key=key, Body=body, ContentType=content_type
             )
         except (BotoCoreError, ClientError) as exc:
             raise ImageStorageError(f"Could not store {key}") from exc
