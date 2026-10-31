@@ -10,6 +10,7 @@ from posts_api.app.repositories.blocks import BlockRepository
 from posts_api.app.repositories.follow_listings import FollowListingRepository
 from posts_api.app.repositories.follow_requests import FollowRequestRepository
 from posts_api.app.repositories.follows import FollowRepository
+from posts_api.app.repositories.mutes import MuteRepository
 from posts_api.app.services.follow_listings import FollowListingService
 from posts_api.app.services.follows import FollowService
 from posts_api.config.settings import get_settings
@@ -27,6 +28,7 @@ def get_follow_service(session: SessionDep, redis: RedisDep, outbox: OutboxDep) 
         BlockRepository(session),
         RedisRateLimiter(redis),
         outbox,
+        MuteRepository(session),
         follow_limit=settings.follow_rate_limit,
         window_seconds=settings.follow_rate_window_seconds,
     )

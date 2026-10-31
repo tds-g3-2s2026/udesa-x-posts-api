@@ -100,6 +100,11 @@ class InMemoryOutbox:
         self.events.append(event)
 
 
+class NobodyMuted:
+    async def is_muted(self, muter_id: uuid.UUID, muted_id: uuid.UUID) -> bool:
+        return False
+
+
 def block_service(follows, requests=None, blocks=None) -> BlockService:
     return BlockService(blocks or InMemoryBlocks(), follows, requests or InMemoryRequests())
 
@@ -111,6 +116,7 @@ def follow_service(follows, blocks) -> FollowService:
         blocks,
         NeverLimited(),
         InMemoryOutbox(),
+        NobodyMuted(),
         follow_limit=50,
         window_seconds=3600,
     )
