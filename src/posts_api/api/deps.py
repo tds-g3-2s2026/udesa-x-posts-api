@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.app.errors import ProblemError
 from posts_api.app.models.follow import Account, ProfileVisibility
+from posts_api.app.repositories.administrator_directory import AdministratorDirectory
 from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.image_storage import ImageStorage
 from posts_api.app.repositories.outbox import OutboxRepository
@@ -35,6 +36,7 @@ from posts_api.app.services.profile_images import ProfileImages
 from posts_api.infrastructure.database.outbox_repository import SqlAlchemyOutboxRepository
 from posts_api.infrastructure.database.session import session_scope
 from posts_api.infrastructure.redis.revocations import RedisRevocationStore
+from posts_api.infrastructure.users_api.administrator_directory import HttpAdministratorDirectory
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,13 @@ def get_users_api(request: Request) -> httpx.AsyncClient:
 
 
 UsersApiDep = Annotated[httpx.AsyncClient, Depends(get_users_api)]
+
+
+def get_administrator_directory(users_api: UsersApiDep) -> AdministratorDirectory:
+    return HttpAdministratorDirectory(users_api)
+
+
+AdministratorDirectoryDep = Annotated[AdministratorDirectory, Depends(get_administrator_directory)]
 
 
 def get_image_storage(request: Request) -> ImageStorage:

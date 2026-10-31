@@ -220,9 +220,16 @@ después de un reintento, la acción responde `503` (`users-api-unavailable`) y 
 siguen pendientes para volver a intentarlo. Un caso sin pendientes responde `204` y no hace
 nada. Solo un token de `moderator` o `superadmin` llega a estas rutas.
 
-Cada acción queda en una auditoría en memoria hasta que exista la de `E5-H6`. Se pierde con el
-pod, por eso cada entrada también sale en el log (`Audit: report.dismissed by ...`), que llega a
-Grafana.
+Cada cierre efectivo guarda `admin.action_recorded.v1` en el outbox de la misma
+transacción que cambia las denuncias. Conserva el email del administrador leído
+desde users-api antes de modificar el caso; si esa identidad no se puede obtener,
+responde 503 sin cerrar denuncias ni levantar la revisión. Un caso sin pendientes
+responde 204 sin consultar users-api ni producir otro evento.
+
+El publicador existente entrega la auditoría por RabbitMQ. users-api conserva el
+historial y deduplica por ID del evento; la consulta refleja estas decisiones con
+consistencia eventual. No se transportan auditorías por HTTP. La llamada HTTP para
+levantar la revisión mantiene su comportamiento y sus límites de consistencia.
 
 ## Eventos que publica
 

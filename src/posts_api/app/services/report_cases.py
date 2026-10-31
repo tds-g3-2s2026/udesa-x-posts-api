@@ -7,83 +7,23 @@ the inbox shows accounts, as the story speaks of reports "of the same user".
 No FastAPI and no SQLAlchemy here, the same shape `ReportService` uses.
 """
 
-import logging
 import uuid
-from collections import deque
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Protocol
 
 from posts_api.app.errors import ProblemError
+from posts_api.app.events import admin_action_recorded
 from posts_api.app.models.report import ReportStatus
 from posts_api.app.pagination import CountCursor
 from posts_api.app.repositories.account_review import ReviewRelease, ReviewReleaseUnavailableError
+from posts_api.app.repositories.administrator_directory import (
+    AdministratorDirectory,
+    AdministratorDirectoryUnavailableError,
+)
+from posts_api.app.repositories.outbox import OutboxRepository
 from posts_api.app.repositories.reports import ReportCase, ReportRepository
-
-logger = logging.getLogger(__name__)
 
 REPORT_DISMISSED = "report.dismissed"
 REPORT_RESOLVED = "report.resolved"
-
-
-class AuditLog(Protocol):
-    """Where administrator actions are recorded.
-
-    The same call E5-H6 plans for its `AuditLog.record`, which posts-api is to
-    reach through `POST /internal/audit` of users-api. Until then, the
-    in-memory log below takes its place without this service changing.
-    """
-
-    async def record(
-        self,
-        actor_id: uuid.UUID,
-        action: str,
-        target_type: str,
-        target_id: uuid.UUID,
-        details: dict[str, Any],
-    ) -> None: ...
-
-
-@dataclass(frozen=True)
-class AuditEntry:
-    occurred_at: datetime
-    actor_id: uuid.UUID
-    action: str
-    target_type: str
-    target_id: uuid.UUID
-    details: dict[str, Any]
-
-
-@dataclass
-class InMemoryAuditLog:
-    """Stand-in until E5-H6 brings the audit table, the same one users-api uses.
-
-    The entries die with the pod, so each one is also written to the log, which
-    leaves the pod over OTLP. Bounded, so a pod that lives long does not grow
-    without end.
-    """
-
-    entries: deque[AuditEntry] = field(default_factory=lambda: deque(maxlen=1000))
-
-    async def record(
-        self,
-        actor_id: uuid.UUID,
-        action: str,
-        target_type: str,
-        target_id: uuid.UUID,
-        details: dict[str, Any],
-    ) -> None:
-        self.entries.append(
-            AuditEntry(
-                occurred_at=datetime.now(UTC),
-                actor_id=actor_id,
-                action=action,
-                target_type=target_type,
-                target_id=target_id,
-                details=details,
-            )
-        )
-        logger.info("Audit: %s by %s on %s %s", action, actor_id, target_type, target_id)
 
 
 class ReportCaseService:
@@ -91,11 +31,13 @@ class ReportCaseService:
         self,
         reports: ReportRepository,
         release: ReviewRelease,
-        audit: AuditLog,
+        administrators: AdministratorDirectory,
+        outbox: OutboxRepository,
     ) -> None:
         self._reports = reports
         self._release = release
-        self._audit = audit
+        self._administrators = administrators
+        self._outbox = outbox
 
     async def pending_cases(
         self, *, cursor: str | None = None
@@ -135,8 +77,21 @@ class ReportCaseService:
         returns, so a release that fails leaves every report pending for the
         administrator to try again (ADR-020).
         """
+        if not await self._reports.has_pending(user_id):
+            return
+        try:
+            actor_email = await self._administrators.email_of(administrator_id)
+        except AdministratorDirectoryUnavailableError as error:
+            raise ProblemError(
+                status=503,
+                code="users-api-unavailable",
+                title="No se pudo cerrar el caso",
+                detail="No se pudo obtener la identidad del administrador. Probá de nuevo",
+            ) from error
+
+        now = datetime.now(UTC)
         closed = await self._reports.close_pending(
-            user_id, status=status, decided_by=administrator_id, decided_at=datetime.now(UTC)
+            user_id, status=status, decided_by=administrator_id, decided_at=now
         )
         if closed == 0:
             # Nothing pending: the case was already closed, by this administrator
@@ -153,6 +108,13 @@ class ReportCaseService:
                 detail="No se pudo levantar la revisión de la cuenta. Probá de nuevo en un momento",
             ) from error
 
-        # After the release and not before: an entry for an action that was
-        # then rolled back would be a lie in the one place meant to be trusted.
-        await self._audit.record(administrator_id, action, "user", user_id, {"reports": closed})
+        await self._outbox.add(
+            admin_action_recorded(
+                administrator_id,
+                actor_email,
+                action,
+                user_id,
+                closed,
+                now=now,
+            )
+        )
