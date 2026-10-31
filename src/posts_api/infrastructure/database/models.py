@@ -61,6 +61,11 @@ class UserProfileModel(Base):
     # and replies point at it. Whoever reads an author checks this column.
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
+    # Where the profile photo and the cover are in the bucket, or NULL for none.
+    # The key and not a URL: a URL is signed on every read and expires.
+    avatar_key: Mapped[str | None] = mapped_column(String(255), default=None)
+    cover_key: Mapped[str | None] = mapped_column(String(255), default=None)
+
 
 class FollowModel(Base):
     __tablename__ = "follows"

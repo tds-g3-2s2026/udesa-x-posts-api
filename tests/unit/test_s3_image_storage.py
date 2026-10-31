@@ -44,7 +44,8 @@ async def bucket():
     async def refuse(request: web.Request) -> web.Response:
         return web.Response(status=403, text="<Error><Code>AccessDenied</Code></Error>")
 
-    app = web.Application()
+    # Room for a cover; aiohttp refuses anything over 1 MiB by default.
+    app = web.Application(client_max_size=16 * 1_048_576)
     app.router.add_put("/images/{key:.+}", put)
     app.router.add_delete("/images/{key:.+}", delete)
     app.router.add_put("/locked/{key:.+}", refuse)
@@ -73,6 +74,36 @@ async def test_put_sends_the_bytes_and_the_content_type(bucket):
     await storage.put("posts/1/a.png", io.BytesIO(b"png-bytes"), content_type="image/png")
 
     assert stored["posts/1/a.png"] == (b"png-bytes", "image/png")
+    await storage.aclose()
+
+
+class RecordedReads(io.BytesIO):
+    """A file that remembers how much it was asked for on each read."""
+
+    def __init__(self, data: bytes) -> None:
+        super().__init__(data)
+        self.asked: list[int | None] = []
+        self.returned: list[int] = []
+
+    def read(self, size: int | None = -1) -> bytes:
+        chunk = super().read(size)
+        self.asked.append(size)
+        self.returned.append(len(chunk))
+        return chunk
+
+
+async def test_put_sends_the_file_in_chunks_without_reading_it_whole(bucket):
+    stored, endpoint = bucket
+    storage = await storage_for(endpoint)
+    data = b"\x89PNG\r\n\x1a\n" + b"\x00" * (10 * 1_048_576)
+    body = RecordedReads(data)
+
+    await storage.put("profiles/1/cover/a.png", body, content_type="image/png")
+
+    assert stored["profiles/1/cover/a.png"] == (data, "image/png")
+    # Never an unbounded read, and no piece bigger than 1 MiB in memory at once.
+    assert body.asked and all(size is not None and size >= 0 for size in body.asked)
+    assert max(body.returned) <= 1_048_576
     await storage.aclose()
 
 

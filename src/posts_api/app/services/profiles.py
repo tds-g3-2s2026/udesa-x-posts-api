@@ -13,6 +13,7 @@ from posts_api.app.repositories.mutes import MuteRepository
 from posts_api.app.repositories.profile_posts import ProfilePostRepository
 from posts_api.app.repositories.user_directory import UserDirectory, UserDirectoryUnavailableError
 from posts_api.app.services.post_images import PostImages
+from posts_api.app.services.profile_images import ProfileImages
 
 
 def profile_not_found() -> ProblemError:
@@ -33,6 +34,7 @@ class ProfileService:
         posts: ProfilePostRepository,
         images: PostImages,
         mutes: MuteRepository,
+        profile_images: ProfileImages,
     ) -> None:
         self._follows = follows
         self._blocks = blocks
@@ -40,6 +42,7 @@ class ProfileService:
         self._posts = posts
         self._images = images
         self._mutes = mutes
+        self._profile_images = profile_images
 
     async def profile_of(self, user_id: uuid.UUID, viewer: Account) -> Profile:
         """The header of `user_id`'s profile, as `viewer` gets to see it.
@@ -63,6 +66,7 @@ class ProfileService:
             if details is None:
                 raise profile_not_found()
 
+        avatar_url, cover_url = await self._profile_images.urls_of(target)
         return Profile(
             id=target.id,
             handle=target.handle,
@@ -72,6 +76,8 @@ class ProfileService:
             followed_by_viewer=await self._follows.is_following(viewer.id, user_id),
             muted_by_viewer=await self._mutes.is_muted(viewer.id, user_id),
             details=details,
+            avatar_url=avatar_url,
+            cover_url=cover_url,
         )
 
     async def posts_of(
