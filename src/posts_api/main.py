@@ -24,6 +24,7 @@ from posts_api.api.internal import router as internal_router
 from posts_api.api.likes import router as likes_router
 from posts_api.api.mutes import router as mutes_router
 from posts_api.api.posts import router as posts_router
+from posts_api.api.profile_images import router as profile_images_router
 from posts_api.api.profiles import router as profiles_router
 from posts_api.api.reports import router as reports_router
 from posts_api.api.retweets import router as retweets_router
@@ -109,6 +110,7 @@ app.include_router(search_router, prefix=API_PREFIX)
 app.include_router(follows_router, prefix=API_PREFIX)
 # After follows: its `/users/suggested` has to be matched before `/users/{user_id}`.
 app.include_router(profiles_router, prefix=API_PREFIX)
+app.include_router(profile_images_router, prefix=API_PREFIX)
 app.include_router(follow_requests_router, prefix=API_PREFIX)
 app.include_router(posts_router, prefix=API_PREFIX)
 app.include_router(likes_router, prefix=API_PREFIX)

@@ -57,6 +57,9 @@ class UserProfile:
     visibility: ProfileVisibility = ProfileVisibility.PUBLIC
     followers_count: int = 0
     following_count: int = 0
+    # Where the photo and the cover are in the bucket, `None` for none.
+    avatar_key: str | None = None
+    cover_key: str | None = None
 
     @property
     def needs_approval(self) -> bool:
