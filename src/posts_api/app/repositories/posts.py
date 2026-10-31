@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.app.models.post import Post, PostWithAuthor
@@ -38,12 +39,14 @@ def _to_post_with_author(
     author_deleted_at: datetime | None,
     liked: bool,
     retweeted: bool,
+    avatar_key: str | None = None,
 ) -> PostWithAuthor:
     return PostWithAuthor(
         id=post.id,
         author_id=post.author_id,
-        # A closed account does not keep its handle on what it left behind.
+        # A closed account does not keep its handle, nor its photo, on what it left behind.
         author_handle=None if author_deleted_at else handle,
+        author_avatar_key=None if author_deleted_at else avatar_key,
         author_deleted=author_deleted_at is not None,
         content=None if post.deleted_at else post.content,
         deleted=post.deleted_at is not None,
@@ -71,6 +74,58 @@ class PostRepository:
         await self._session.flush()
         await self._session.refresh(row)
         return _to_post(row)
+
+    async def search(
+        self, query: str, viewer_id: uuid.UUID, *, cursor: Cursor | None
+    ) -> tuple[list[tuple[PostWithAuthor, list[int]]], str | None]:
+        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        positions = (
+            func.generate_series(1, func.char_length(PostModel.content) - len(query) + 1)
+            .table_valued("position")
+            .render_derived(name="match_positions")
+        )
+        match_positions = (
+            select(
+                func.array_agg(aggregate_order_by(positions.c.position - 1, positions.c.position))
+            )
+            .select_from(positions)
+            .where(
+                func.substr(PostModel.content, positions.c.position, len(query)).ilike(
+                    escaped, escape="\\"
+                )
+            )
+            .correlate(PostModel)
+            .scalar_subquery()
+        )
+        statement = (
+            select(PostModel, UserProfileModel.handle, match_positions)
+            .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
+            .where(
+                PostModel.content.ilike(f"%{escaped}%", escape="\\"),
+                PostModel.deleted_at.is_(None),
+                visible_to(
+                    viewer_id,
+                    author_id=PostModel.author_id,
+                    author_visibility=UserProfileModel.visibility,
+                    author_deleted_at=UserProfileModel.deleted_at,
+                ),
+            )
+        )
+        rows = await self._session.execute(
+            apply_cursor(
+                statement, order_by=PostModel.created_at, tiebreak_by=PostModel.id, cursor=cursor
+            )
+        )
+        posts = [
+            (_to_post_with_author(post, handle, None, False, False), positions or [])
+            for post, handle, positions in rows
+        ]
+        return page_of(
+            posts,
+            limit=DEFAULT_PAGE_SIZE,
+            at=lambda item: item[0].created_at,
+            tiebreak=lambda item: item[0].id,
+        )
 
     async def count_created_since(self, since: datetime) -> int:
         return await self._session.scalar(
@@ -102,6 +157,7 @@ class PostRepository:
                 UserProfileModel.deleted_at,
                 liked_by(viewer_id),
                 retweeted_by(viewer_id),
+                UserProfileModel.avatar_key,
             )
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
             .where(
@@ -119,8 +175,8 @@ class PostRepository:
         row = found.first()
         if row is None:
             return None
-        post, handle, author_deleted_at, liked, retweeted = row
-        return _to_post_with_author(post, handle, author_deleted_at, liked, retweeted)
+        post, handle, author_deleted_at, liked, retweeted, avatar_key = row
+        return _to_post_with_author(post, handle, author_deleted_at, liked, retweeted, avatar_key)
 
     async def lock_visible(
         self, post_id: uuid.UUID, *, viewer_id: uuid.UUID
@@ -173,6 +229,7 @@ class PostRepository:
                 UserProfileModel.deleted_at,
                 liked_by(viewer_id),
                 retweeted_by(viewer_id),
+                UserProfileModel.avatar_key,
             )
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
             .where(
@@ -197,8 +254,8 @@ class PostRepository:
         )
         found = await self._session.execute(statement)
         replies = [
-            _to_post_with_author(post, handle, author_deleted_at, liked, retweeted)
-            for post, handle, author_deleted_at, liked, retweeted in found.all()
+            _to_post_with_author(post, handle, author_deleted_at, liked, retweeted, avatar_key)
+            for post, handle, author_deleted_at, liked, retweeted, avatar_key in found.all()
         ]
         return page_of(
             replies, limit=limit, at=lambda one: one.created_at, tiebreak=lambda one: one.id

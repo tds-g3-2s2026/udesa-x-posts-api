@@ -10,12 +10,19 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from posts_api.api.deps import CurrentUserDep, PostImagesDep, SessionDep, UsersApiDep
+from posts_api.api.deps import (
+    CurrentUserDep,
+    PostImagesDep,
+    ProfileImagesDep,
+    SessionDep,
+    UsersApiDep,
+)
 from posts_api.api.schemas.feed import FeedPostSummary
 from posts_api.api.schemas.pagination import CursorPage
 from posts_api.api.schemas.profiles import ProfileSummary
 from posts_api.app.repositories.blocks import BlockRepository
 from posts_api.app.repositories.follows import FollowRepository
+from posts_api.app.repositories.mutes import MuteRepository
 from posts_api.app.repositories.profile_posts import ProfilePostRepository
 from posts_api.app.repositories.user_directory import UserDirectory
 from posts_api.app.services.profiles import ProfileService
@@ -32,6 +39,7 @@ def get_profile_service(
     session: SessionDep,
     directory: Annotated[UserDirectory, Depends(get_user_directory)],
     images: PostImagesDep,
+    profile_images: ProfileImagesDep,
 ) -> ProfileService:
     return ProfileService(
         FollowRepository(session),
@@ -39,6 +47,8 @@ def get_profile_service(
         directory,
         ProfilePostRepository(session),
         images,
+        MuteRepository(session),
+        profile_images,
     )
 
 

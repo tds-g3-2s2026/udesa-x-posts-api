@@ -23,6 +23,8 @@ def _to_profile(row: UserProfileModel) -> UserProfile:
         visibility=ProfileVisibility(row.visibility),
         followers_count=row.followers_count,
         following_count=row.following_count,
+        avatar_key=row.avatar_key,
+        cover_key=row.cover_key,
     )
 
 
@@ -42,6 +44,20 @@ class FollowRepository:
         if row is None or row.deleted_at is not None:
             return None
         return _to_profile(row)
+
+    async def profile_is_deleted(self, user_id: uuid.UUID) -> bool:
+        row = await self._session.get(UserProfileModel, user_id)
+        return row is not None and row.deleted_at is not None
+
+    async def create_profile_if_missing(self, account: Account) -> UserProfile | None:
+        await self._session.execute(
+            insert(UserProfileModel)
+            .values(
+                id=account.id, handle=account.handle, visibility=account.profile_visibility.value
+            )
+            .on_conflict_do_nothing(index_elements=[UserProfileModel.id])
+        )
+        return await self.find_profile(account.id)
 
     async def ensure_profile(self, account: Account) -> UserProfile:
         """The profile of whoever is signed in, created the first time they appear.

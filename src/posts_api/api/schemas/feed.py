@@ -18,10 +18,11 @@ class FeedPostSummary(BaseModel):
     id: uuid.UUID
     author_id: uuid.UUID = Field(serialization_alias="authorId")
     author_handle: str | None = Field(serialization_alias="authorHandle")
-    # Neither lives in posts-api yet: the display name needs a copy this
-    # service does not have, and the avatar is not built. Present and null,
-    # not missing, so the screen can read the final shape today.
+    # The display name does not live in posts-api: it needs a copy this service
+    # does not have. Present and null, not missing, so the screen reads one shape.
     author_display_name: str | None = Field(default=None, serialization_alias="authorDisplayName")
+    # The author's photo, signed like the images; null without one, and the
+    # app draws the default avatar. On a retweet, the original author's.
     author_avatar_url: str | None = Field(default=None, serialization_alias="authorAvatarUrl")
     # The account that wrote it was closed. The handle, the name and the avatar
     # are then null and `authorId` stays, but opening it answers 404: the screen
@@ -57,6 +58,7 @@ class FeedPostSummary(BaseModel):
             id=post.id,
             author_id=post.author_id,
             author_handle=post.author_handle,
+            author_avatar_url=post.author_avatar_url,
             author_deleted=post.author_deleted,
             content=post.content,
             deleted=post.deleted,

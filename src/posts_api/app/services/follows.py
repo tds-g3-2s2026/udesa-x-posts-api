@@ -14,6 +14,7 @@ from posts_api.app.models.follow import Account, FollowRequest
 from posts_api.app.repositories.blocks import BlockRepository
 from posts_api.app.repositories.follow_requests import FollowRequestRepository
 from posts_api.app.repositories.follows import FollowRepository
+from posts_api.app.repositories.mutes import MuteRepository
 from posts_api.app.repositories.outbox import OutboxRepository
 from posts_api.app.repositories.rate_limiter import RateLimiter
 
@@ -29,6 +30,7 @@ class FollowService:
         blocks: BlockRepository,
         rate_limiter: RateLimiter,
         outbox: OutboxRepository,
+        mutes: MuteRepository,
         *,
         follow_limit: int,
         window_seconds: int,
@@ -38,6 +40,7 @@ class FollowService:
         self._blocks = blocks
         self._rate_limiter = rate_limiter
         self._outbox = outbox
+        self._mutes = mutes
         self._follow_limit = follow_limit
         self._window_seconds = window_seconds
 
@@ -111,14 +114,16 @@ class FollowService:
         # that does not exist.
         await self._repository.add_follow(follower_id, followee_id)
         await self._repository.move_counters(follower_id, followee_id, by=1)
-        await self._outbox.add(
-            events.follow_created(
-                follower_id,
-                followee_id,
-                follower_handle=follower_profile.handle,
-                now=datetime.now(UTC),
+        # Whoever muted the follower is followed all the same, without the notice.
+        if not await self._mutes.is_muted(followee_id, follower_id):
+            await self._outbox.add(
+                events.follow_created(
+                    follower_id,
+                    followee_id,
+                    follower_handle=follower_profile.handle,
+                    now=datetime.now(UTC),
+                )
             )
-        )
         return None
 
     async def unfollow(self, follower: Account, followee_id: uuid.UUID) -> None:

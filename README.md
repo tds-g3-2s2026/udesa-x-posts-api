@@ -91,13 +91,16 @@ incluiría esa plantilla.
 Las imágenes de los posts van a un bucket privado de S3. Se configuran con `S3_BUCKET`,
 `S3_REGION` (por defecto `us-east-1`) e `IMAGE_URL_EXPIRY_SECONDS` (por defecto `3600`, lo que
 dura la URL firmada de lectura). Las credenciales no son variables del servicio: el SDK las toma
-del entorno. En el cluster llegan por el Secret (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` y
-`AWS_SESSION_TOKEN`, de un usuario de IAM con acceso al bucket) y son temporales: al vencer, subir
-imágenes falla con `503 images-unavailable` y las URLs de lectura dejan de abrir, hasta cargar
-otras credenciales y volver a desplegar. Lo
-recomendable a futuro es un rol de IAM asociado al pod, sin claves. Sin `S3_BUCKET` el servicio arranca y atiende todo lo demás, pero
+del entorno. En el cluster no hay claves: el pod asume el rol de IAM `tds-group-3-s3-role`, que
+solo puede leer, escribir y borrar en el bucket. `k8s/deployment.yaml` monta el token que
+EKS firma para el pod (audiencia `sts.amazonaws.com`) y declara `AWS_ROLE_ARN` y
+`AWS_WEB_IDENTITY_TOKEN_FILE`; el SDK cambia ese token por credenciales temporales y las
+renueva solo. No hay nada que cargar en los GitHub Secrets ni que rotar. Se declara en el
+Deployment y no con un ServiceAccount anotado porque el pipeline no aplica ServiceAccounts y el
+namespace no deja crearlos. Sin `S3_BUCKET` el servicio arranca y atiende todo lo demás, pero
 publicar un post con imágenes responde `503 images-unavailable`. `S3_ENDPOINT_URL` solo sirve
-para apuntar a un servidor compatible con S3 en desarrollo.
+para apuntar a un servidor compatible con S3 en desarrollo. Para probar contra el bucket real
+desde una máquina local hacen falta credenciales propias en el entorno.
 `envFrom` se lee al crear el contenedor: el pipeline pone el hash del ConfigMap y del Secret
 en el pod template, así que un cambio solo de configuración también reemplaza los pods. La
 pública corresponde a la privada estable de users; los tokens antiguos sin `iss` se rechazan.
@@ -116,6 +119,33 @@ El dry-run no necesita permisos de escritura, pero `kubectl` consulta discovery
 y esquemas del API server: requiere un kubeconfig y acceso de lectura al cluster.
 No comprueba la existencia de la imagen, los valores secretos ni la cuota libre.
 El PR requiere aprobación del tutor.
+
+## Foto de perfil y portada
+
+Van al mismo bucket que las imágenes de los posts, bajo `profiles/<id>/avatar/` y
+`profiles/<id>/cover/`, y el perfil guarda solo la clave (`user_profiles.avatar_key` y
+`cover_key`). Las rutas cuelgan de `/users/me`, que el gateway manda a este servicio (`/api/me`
+es de `users-api`):
+
+| Ruta | Qué hace |
+|---|---|
+| `PUT /users/me/avatar` | Sube o reemplaza la foto: `multipart/form-data` con una sola parte `image`, JPG o PNG, hasta 5 MiB. Responde `200 {avatarUrl}`. |
+| `PUT /users/me/cover` | Igual para la portada, hasta 10 MiB. Responde `200 {coverUrl}`. |
+| `DELETE /users/me/avatar`, `DELETE /users/me/cover` | Vuelve a no tener imagen. `204`, también si no había ninguna. |
+
+El formato se decide por los primeros bytes, como en los posts, y el archivo pasa del request a
+un temporal (en disco por encima de 256 KiB) y de ahí a S3 en partes de hasta 1 MiB: nunca está
+entero en memoria. Al reemplazar o borrar, el archivo anterior se borra del bucket después del
+commit; si S3 falla en ese paso queda suelto y se registra un warning, pero el perfil ya cambió.
+Errores: `422 image-format-not-supported`, `422 image-too-large` (el `detail` dice el límite),
+`400 invalid-multipart` (sin parte `image`, con más de una o ilegible) y `503 images-unavailable`.
+
+`GET /users/{id}` trae `avatarUrl` y `coverUrl`, y cada post (feed, `GET /posts/{id}`,
+respuestas y publicaciones del perfil) trae `authorAvatarUrl`, la del autor original en una fila
+de retweet. Son URLs firmadas que vencen como las de los posts; `null` si no hay imagen o la
+cuenta está cerrada, y la app dibuja el avatar por defecto. Si una URL no se puede firmar sale
+`null` en vez de fallar la página. Las listas de seguidores, seguidos y sugeridos siguen con
+`avatarUrl` en `null`.
 
 ## Revocación de sesiones
 
@@ -160,7 +190,8 @@ El manejador corre en una sola transacción y se puede repetir sin efecto: la cu
   respuestas;
 - `GET /users/{id}`, sus posts, sus seguidores y a quién sigue, y seguirla responden `404
   user-not-found`, como una cuenta que no existe;
-- las imágenes de sus posts siguen en el bucket: borrarlas queda como mejora.
+- las imágenes de sus posts, su foto y su portada siguen en el bucket: borrarlas queda como
+  mejora.
 
 El filtro está en la consulta y no depende de cuándo llegue el evento a una réplica: desde que
 el manejador commitea, nada la muestra. Antes del evento, lo que sí es inmediato es que sus

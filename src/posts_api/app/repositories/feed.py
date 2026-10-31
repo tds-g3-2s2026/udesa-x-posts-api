@@ -1,8 +1,8 @@
-"""Read followed activity with a single order and visibility check before paging."""
+"""Read followed activity with a single order, visibility and mute check before paging."""
 
 import uuid
 
-from sqlalchemy import String, literal, select, tuple_, union_all
+from sqlalchemy import String, literal, not_, select, tuple_, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -10,6 +10,7 @@ from posts_api.app.feed_pagination import FeedCursor
 from posts_api.app.models.post import PostWithAuthor
 from posts_api.app.pagination import DEFAULT_PAGE_SIZE
 from posts_api.app.repositories.likes import liked_by
+from posts_api.app.repositories.mutes import muted_by_viewer
 from posts_api.app.repositories.post_visibility import visible_to
 from posts_api.app.repositories.retweets import retweeted_by
 from posts_api.infrastructure.database.models import (
@@ -61,6 +62,8 @@ class FeedRepository:
                     author_visibility=sharer.visibility,
                     author_deleted_at=sharer.deleted_at,
                 ),
+                # A retweet by a muted account leaves, whatever it shares.
+                not_(muted_by_viewer(viewer_id, RetweetModel.user_id)),
             )
         )
         activity = union_all(originals, shares).subquery()
@@ -81,6 +84,7 @@ class FeedRepository:
                 activity.c.shared_by,
                 liked_by(viewer_id),
                 retweeted_by(viewer_id),
+                UserProfileModel.avatar_key,
             )
             .join(activity, activity.c.post_id == PostModel.id)
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
@@ -94,6 +98,8 @@ class FeedRepository:
                     # A reply of a closed account that somebody retweeted stays.
                     keeps_deleted_author=PostModel.parent_id.is_not(None),
                 ),
+                # A muted author leaves too when somebody else retweets them.
+                not_(muted_by_viewer(viewer_id, PostModel.author_id)),
             )
         )
         if cursor is not None:
@@ -120,8 +126,11 @@ class FeedRepository:
                 activity_at=at,
                 retweeted_by=shared_by,
                 retweeter_id=actor if kind else None,
+                # The author of the post, also on a retweet row: the photo goes
+                # with the post it shares, not with whoever shared it.
+                author_avatar_key=None if closed_at else photo,
             )
-            for post, handle, closed_at, at, kind, actor, shared_by, liked, retweeted in page
+            for post, handle, closed_at, at, kind, actor, shared_by, liked, retweeted, photo in page
         ]
         next_cursor = None
         if len(rows) > limit:

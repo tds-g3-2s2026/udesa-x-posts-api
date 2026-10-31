@@ -16,11 +16,15 @@ class FakeImageStorage(ImageStorage):
         self.puts = 0
         self.fail_on_url = False
         self.fail_on_delete = False
+        # Whether each file arrived as a temporary file already on disk, not as
+        # bytes in memory. `_rolled` is private, but it is the only way to ask.
+        self.from_disk: dict[str, bool] = {}
 
     async def put(self, key: str, body: BinaryIO, *, content_type: str) -> None:
         self.puts += 1
         if self.fail_on_put == self.puts:
             raise ImageStorageError("simulated failure")
+        self.from_disk[key] = getattr(body, "_rolled", False)
         self.files[key] = body.read()
         self.content_types[key] = content_type
 

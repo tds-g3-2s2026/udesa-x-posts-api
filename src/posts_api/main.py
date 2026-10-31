@@ -20,11 +20,15 @@ from posts_api.api.feed import router as feed_router
 from posts_api.api.follow_requests import router as follow_requests_router
 from posts_api.api.follows import router as follows_router
 from posts_api.api.health import router as health_router
+from posts_api.api.internal import router as internal_router
 from posts_api.api.likes import router as likes_router
+from posts_api.api.mutes import router as mutes_router
 from posts_api.api.posts import router as posts_router
+from posts_api.api.profile_images import router as profile_images_router
 from posts_api.api.profiles import router as profiles_router
 from posts_api.api.reports import router as reports_router
 from posts_api.api.retweets import router as retweets_router
+from posts_api.api.search import router as search_router
 from posts_api.app.errors import ProblemError
 from posts_api.app.security import load_public_key
 from posts_api.config.settings import API_PREFIX, get_settings
@@ -101,14 +105,18 @@ app.add_exception_handler(RequestValidationError, validation_error_handler)
 # The healthcheck stays out of the prefix: the Kubernetes probes reach the pod
 # directly and never pass through the Ingress.
 app.include_router(health_router)
+app.include_router(internal_router)
+app.include_router(search_router, prefix=API_PREFIX)
 app.include_router(follows_router, prefix=API_PREFIX)
 # After follows: its `/users/suggested` has to be matched before `/users/{user_id}`.
 app.include_router(profiles_router, prefix=API_PREFIX)
+app.include_router(profile_images_router, prefix=API_PREFIX)
 app.include_router(follow_requests_router, prefix=API_PREFIX)
 app.include_router(posts_router, prefix=API_PREFIX)
 app.include_router(likes_router, prefix=API_PREFIX)
 app.include_router(retweets_router, prefix=API_PREFIX)
 app.include_router(feed_router, prefix=API_PREFIX)
 app.include_router(blocks_router, prefix=API_PREFIX)
+app.include_router(mutes_router, prefix=API_PREFIX)
 app.include_router(reports_router, prefix=API_PREFIX)
 app.include_router(admin_posts_router, prefix=API_PREFIX)

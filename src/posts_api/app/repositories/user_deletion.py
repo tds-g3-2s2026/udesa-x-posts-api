@@ -2,8 +2,8 @@
 
 Nothing is deleted from `user_profiles`, `posts` or `reports`: other rows point
 at them, and users-api keeps the account as a soft delete too. What goes away is
-what the person did with other people: follows, requests, blocks, likes and
-retweets. The counters of everyone they touched are corrected in the same
+what the person did with other people: follows, requests, blocks, mutes, likes
+and retweets. The counters of everyone they touched are corrected in the same
 statements, because they are stored columns and not counted on every read.
 """
 
@@ -19,6 +19,7 @@ from posts_api.infrastructure.database.models import (
     FollowModel,
     FollowRequestModel,
     LikeModel,
+    MuteModel,
     PostModel,
     RetweetModel,
     UserProfileModel,
@@ -82,6 +83,13 @@ class UserDeletionRepository:
         await self._session.execute(
             delete(BlockModel).where(
                 or_(BlockModel.blocker_id == user_id, BlockModel.blocked_id == user_id)
+            )
+        )
+
+    async def release_mutes(self, user_id: uuid.UUID) -> None:
+        await self._session.execute(
+            delete(MuteModel).where(
+                or_(MuteModel.muter_id == user_id, MuteModel.muted_id == user_id)
             )
         )
 

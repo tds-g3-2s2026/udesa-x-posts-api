@@ -61,6 +61,11 @@ class UserProfileModel(Base):
     # and replies point at it. Whoever reads an author checks this column.
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
+    # Where the profile photo and the cover are in the bucket, or NULL for none.
+    # The key and not a URL: a URL is signed on every read and expires.
+    avatar_key: Mapped[str | None] = mapped_column(String(255), default=None)
+    cover_key: Mapped[str | None] = mapped_column(String(255), default=None)
+
 
 class FollowModel(Base):
     __tablename__ = "follows"
@@ -154,9 +159,37 @@ class BlockModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class MuteModel(Base):
+    """One account muting another. Unlike a block it only changes what the muter
+    sees: the follow stays and the muted account is never told."""
+
+    __tablename__ = "mutes"
+    __table_args__ = (
+        CheckConstraint("muter_id <> muted_id", name="ck_mutes_not_self"),
+        # Matches the muted-accounts listing: the owner, then the cursor's order
+        # column and tiebreak. "Did this viewer mute that author", which the
+        # feed asks, is the primary key.
+        Index("ix_mutes_muter_cursor", "muter_id", "created_at", "muted_id"),
+    )
+
+    muter_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("user_profiles.id"), primary_key=True
+    )
+    muted_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("user_profiles.id"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class PostModel(Base):
     __tablename__ = "posts"
     __table_args__ = (
+        Index(
+            "ix_posts_content_trgm",
+            "content",
+            postgresql_using="gin",
+            postgresql_ops={"content": "gin_trgm_ops"},
+        ),
         # Serves both "this author's posts" and the feed's per-author lookup
         # while it merges everyone the viewer follows, ordered the same way
         # the cursor reads: created_at, then id as the tiebreak. A plain index
