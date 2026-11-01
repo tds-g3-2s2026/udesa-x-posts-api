@@ -10,7 +10,7 @@ Este archivo configura el comportamiento de GitHub Copilot en el repositorio. Se
 ## Pull Requests
 
 - La descripción es texto corrido, sin secciones, checkboxes ni tablas: se explica el cambio como se le contaría en persona a alguien del equipo que no estuvo en esa parte. Seguir la guía de `.github/PULL_REQUEST_TEMPLATE.md` y dejar al final la línea `Closes #`.
-- Tiene que quedar claro qué problema había, cómo se resolvió y por qué así, con qué se topó el autor y qué decisión conviene mirar con más atención.
+- Tiene que quedar claro qué problema había, cómo se resolvió y por qué así, con qué se topó el autor y qué decisión conviene mirar con más atención. El porqué y lo que costó no están en el diff: preguntárselos al autor antes de redactar, no suponerlos.
 - Lenguaje simple y plano, que entienda alguien sin todo el contexto de la pieza. Si aparece un término propio del módulo, explicarlo en pocas palabras.
 - Explicar la solución como una unidad y no archivo por archivo.
 
