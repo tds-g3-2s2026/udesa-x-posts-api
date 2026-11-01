@@ -1,42 +1,47 @@
 ---
 name: explicar-implementacion
-description: Genera la explicación estructurada de un cambio de código para la sección obligatoria del Pull Request y la defensa ante el tutor. Usar antes de abrir un PR, antes de mergear, al preparar la defensa de una historia o cuando alguien pida explicar qué hace un cambio o por qué se hizo así.
+description: Redacta la descripción de un Pull Request como una explicación breve y en texto corrido, después de preguntarle al autor por qué tomó sus decisiones, y sirve para preparar la defensa ante el tutor. Usar antes de abrir un PR, antes de mergear, al preparar la defensa de una historia o cuando alguien pida explicar qué hace un cambio o por qué se hizo así.
 ---
 
 # Explicar implementación
 
-Genera la explicación técnica y justificación de diseño de un diff para que cualquier integrante del equipo pueda entenderlo, revisarlo y defenderlo ante el tutor.
+Redacta la descripción del PR con dos fuentes: el diff y lo que responde el autor. Sale una explicación corta, como la que el autor le daría en persona a alguien del equipo que no estuvo en esa parte. El diff muestra qué cambió, pero no por qué se eligió esa forma ni con qué se topó el autor: eso se le pregunta antes de redactar, no se deduce. Si el autor no puede responder, todavía no entendió el cambio.
 
 ## Entradas requeridas
 
 1. **Diff completo**: `git diff main...HEAD`
 2. **Issue y Criterios de Aceptación (CA)**: objetivo de la historia y requerimientos.
-3. **Contexto del repo**: `AGENTS.md` y arquitectura asociada.
+3. **Contexto del repo**: `AGENTS.md`, la arquitectura asociada y los ADR que toque el cambio.
+4. **Respuestas del autor**: salen del paso siguiente.
 
-## Estructura de salida
+## Preguntarle al autor antes de redactar
 
-Completar exactamente estas cuatro secciones en español:
+1. Leer el diff y el issue, y marcar las decisiones que más pesan: los lugares donde había más de una forma razonable de hacerlo.
+2. Preguntarle al autor, en un solo mensaje, y esperar las respuestas antes de seguir. Las preguntas son sobre ese código, no genéricas: "¿por qué la unicidad quedó en la base y no en un chequeo antes del insert?", no "¿por qué hiciste este cambio?". Tienen que cubrir:
+   - por qué eligió esa forma y qué alternativa descartó;
+   - con qué se trabó en el camino;
+   - qué dejó afuera a propósito.
+3. Redactar con esas respuestas. Un porqué que el autor no dio no se completa con una suposición: se vuelve a preguntar o queda afuera.
 
-### 1. Qué cambió
-- Describir los cambios concretos en lenguaje llano, mencionando archivos y módulos principales.
-- Explicar la solución como una unidad conceptual ordenada por relevancia, no como un listado línea por línea del diff.
+Entre dos y cuatro preguntas. En un cambio chico, como un PR autoaprobado según el ADR-022, alcanza con una o ninguna.
 
-### 2. Por qué
-- Justificar cada decisión técnica anclándola en un Criterio de Aceptación (CA), una regla de `AGENTS.md` o un ADR en `docs/adr/`.
-- Si una decisión no responde a ninguna de estas fuentes, declararla explícitamente como decisión de diseño local.
+## Qué tiene que contar
 
-### 3. Ventajas y desventajas
-- **Ventajas**: qué resuelve, qué simplifica o qué garantías otorga.
-- **Desventajas y costos**: compromisos asumidos (ej. consulta extra a base de datos, desnormalización, acoplamiento, casos borde omitidos). Identificarlos sin omitir costos.
+Texto corrido en español, sin títulos, checkboxes, tablas ni listas largas. Tiene que quedar claro:
 
-### 4. Mejoras posibles
-- Diferenciar lo que **quedó afuera a propósito** (historias futuras, alcance acotado) de lo que **no se llegó a implementar** por tiempo o complejidad.
+- **El problema**: qué pasaba o qué faltaba, y por qué hacía falta tocarlo.
+- **La solución**: cómo se resolvió y por qué de esa forma, según lo que respondió el autor. Si la decisión sale de un CA, de una regla de `AGENTS.md` o de un ADR, nombrarlo. Si no sale de ninguno, decir que es una decisión propia del cambio.
+- **Lo que costó**: con qué se topó el autor en el camino, si hubo algo.
+- **Lo que conviene mirar**: la decisión que más pesa, el costo que se aceptó o lo que quedó afuera a propósito.
+
+Si el PR es autoaprobado según el ADR-022 de `udesa-x-platform`, una frase que diga por qué entra. Al final, la línea `Closes #<número>`.
 
 ## Criterios de calidad
 
-- **Claridad didáctica**: Explicar la ruta que sigue el dato (entrada -> servicio -> persistencia/evento).
-- **Cero jerga sin definir**: Si se usan términos técnicos (ej. *outbox*, *idempotencia*, *cursor pagination*), definir en una frase qué implica en este código.
-- **Sin adornos**: Si el cambio es simple, la explicación debe ser concisa.
+- **Para alguien sin contexto**: que lo entienda un integrante que nunca abrió ese módulo. Contar el recorrido del dato (entrada -> servicio -> persistencia o evento) antes que los nombres de archivos.
+- **Lenguaje plano**: frases cortas y palabras simples. Si aparece un término técnico propio de la pieza (ej. *outbox*, *idempotencia*, *cursor pagination*), decir en una frase qué implica en este código.
+- **Proporción**: un cambio chico se explica en dos o tres frases. Si la explicación no entra en unos pocos párrafos, probablemente el PR hace más de una cosa y conviene partirlo.
+- **La solución como una unidad**, no archivo por archivo ni línea por línea del diff.
 
 ## Señales de bloqueo (Red Flags)
 
@@ -44,20 +49,22 @@ Frenar y alertar al desarrollador antes de redactar el PR si:
 - Hay archivos modificados en el diff cuyo motivo no se puede justificar.
 - Se introdujo una librería o patrón nuevo sin un ADR previo.
 - Un Criterio de Aceptación de la issue no tiene código ni tests que lo respalden.
-- La justificación de una decisión es meramente "porque así funciona".
+- La justificación de una decisión es meramente "porque así funciona", o el autor no sabe responder por qué la tomó.
 
-## Ejemplo de salida
+## Ejemplo
 
-> **Qué cambió**
-> Se implementó el endpoint `POST /posts/{id}/likes` en `routes/likes.py` y su servicio en `services/likes.py`. Se agregó la tabla `post_likes` con clave primaria compuesta `(user_id, post_id)` en la migración `0007_post_likes.py`. El contador `likes_count` de la tabla `posts` se actualiza en la misma transacción que el insert.
+Preguntas al autor:
+
+> 1. ¿Por qué la unicidad del like quedó en la base, con la clave usuario y post, y no en un chequeo antes del insert?
+> 2. El contador de likes del post se actualiza en la misma transacción que el insert. ¿Lo comparaste contra contarlos en cada lectura?
+> 3. ¿Hubo algo que te costó más de lo que esperabas?
+
+Descripción redactada con las respuestas:
+
+> Hasta ahora un usuario podía darle me gusta dos veces al mismo post si tocaba el botón rápido: llegaban dos requests casi juntos, los dos veían que no había like y los dos lo guardaban. El CA.3 pide un solo like por usuario y por post.
 >
-> **Por qué**
-> La clave compuesta garantiza a nivel de base de datos el CA.3 (un like por usuario por post), evitando condiciones de carrera en requests concurrentes sin consultas previas. La actualización transaccional de `likes_count` evita desincronizaciones ante caídas intermedias.
+> Lo resolví en la base y no en el código: la tabla `post_likes` ahora tiene como clave el par usuario y post, así que el segundo insert falla solo y lo devolvemos como si ya existiera. Chequear antes de insertar no alcanzaba, porque entre el chequeo y el insert puede entrar el otro request.
 >
-> **Ventajas y desventajas**
-> - *Ventaja*: La integridad la asegura la base de datos de forma atómica.
-> - *Desventaja*: El contador es dato desnormalizado; si se insertara en `post_likes` por fuera del servicio, el contador podría desfasarse. Se priorizó velocidad de lectura del feed sobre cálculo en vivo (`COUNT(*)`).
+> Lo que más me costó fue el contador de likes del post. Lo actualizo en la misma transacción que el insert, para que no quede desfasado si algo se corta a mitad de camino. Es lo que conviene mirar: el contador es un dato copiado, y si alguien inserta likes por fuera del servicio deja de coincidir. Lo elegí para que el feed no tenga que contar likes en cada lectura.
 >
-> **Mejoras posibles**
-> - *Fuera de alcance*: Notificación al autor del post (cubierto en historia E4-H2). El endpoint ya emite el evento `interaction.created`.
-> - *Mejora futura*: Tarea periódica de reconciliación de contadores ante desfasajes.
+> Closes #42
