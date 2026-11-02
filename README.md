@@ -32,6 +32,20 @@ Sin Docker, solo los unitarios. Los de integración se saltean si no hay base:
 uv sync
 uv run pytest
 ```
+
+## Métricas operativas
+
+Las duraciones HTTP se registran en segundos, agrupadas por método, ruta parametrizada y
+código de respuesta. Los identificadores concretos, los parámetros de consulta y los
+healthchecks quedan fuera de las métricas. Los exemplars conservan una referencia a la traza
+de una petición muestreada, sin convertir su identificador en una etiqueta de la serie.
+
+La exportación usa el endpoint y las credenciales de OpenTelemetry existentes y se activa
+únicamente con `OTEL_EXPORTER_OTLP_ENDPOINT`. El lector envía lo pendiente antes de cerrarse;
+un fallo del destino de observabilidad no cambia las respuestas de la API. Los objetivos de
+latencia del usuario se evalúan desde el gateway; las métricas internas permiten localizar
+el servicio que consume ese tiempo.
+
 ## Integración continua
 
 El pipeline vive una sola vez, en `udesa-x-platform`, y este repo lo consume en cuatro líneas

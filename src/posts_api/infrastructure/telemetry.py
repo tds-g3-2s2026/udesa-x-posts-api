@@ -1,24 +1,48 @@
-"""What the service reports about itself: a trace per request and its logs.
-
-Both leave the pod over OTLP. The exporters read the standard
-OTEL_EXPORTER_OTLP_* variables on their own, so nothing here knows where the
-data goes.
-"""
+"""Request traces, correlated logs and bounded HTTP duration metrics."""
 
 import logging
+import os
 import time
 from importlib.metadata import version
+from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.logging.handler import LoggingHandler
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor, LogRecordExporter
+from opentelemetry.sdk.metrics import MeterProvider, TraceBasedExemplarFilter
+from opentelemetry.sdk.metrics.export import MetricReader
+from opentelemetry.sdk.metrics.view import (
+    DropAggregation,
+    ExplicitBucketHistogramAggregation,
+    View,
+)
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
 
 SERVICE_NAME = "posts-api"
+SERVICE_INSTANCE_ID = str(uuid4())
+HTTP_DURATION_BUCKETS = (
+    0.005,
+    0.01,
+    0.025,
+    0.05,
+    0.075,
+    0.1,
+    0.25,
+    0.3,
+    0.4,
+    0.5,
+    0.75,
+    0.8,
+    1,
+    2.5,
+    5,
+    7.5,
+    10,
+)
 
 # Kubernetes probes hit these every few seconds. A span and a log line per
 # probe would bury the requests somebody actually made.
@@ -28,10 +52,33 @@ request_logger = logging.getLogger("posts_api.requests")
 
 
 def _resource() -> Resource:
-    return Resource.create({"service.name": SERVICE_NAME, "service.version": version("posts-api")})
+    return Resource.create(
+        {
+            "service.name": SERVICE_NAME,
+            "service.version": version(SERVICE_NAME),
+            "service.instance.id": SERVICE_INSTANCE_ID,
+        }
+    )
 
 
-def instrument(app: FastAPI) -> TracerProvider:
+def create_meter_provider(reader: MetricReader | None = None) -> MeterProvider:
+    """Collect HTTP durations in seconds, with an optional in-process or OTLP reader."""
+    return MeterProvider(
+        resource=_resource(),
+        metric_readers=[reader] if reader is not None else [],
+        exemplar_filter=TraceBasedExemplarFilter(),
+        views=[
+            View(
+                instrument_name="http.server.request.duration",
+                attribute_keys={"http.request.method", "http.route", "http.response.status_code"},
+                aggregation=ExplicitBucketHistogramAggregation(HTTP_DURATION_BUCKETS),
+            ),
+            View(instrument_name="*", aggregation=DropAggregation()),
+        ],
+    )
+
+
+def instrument(app: FastAPI, meter_provider: MeterProvider | None = None) -> TracerProvider:
     """Open a span per request, joining the caller's trace, and log each request.
 
     Must run before the first request, when the middleware stack is built.
@@ -60,13 +107,16 @@ def instrument(app: FastAPI) -> TracerProvider:
         )
         return response
 
+    # Stable HTTP conventions emit durations in seconds instead of legacy milliseconds.
+    os.environ.setdefault("OTEL_SEMCONV_STABILITY_OPT_IN", "http")
     provider = TracerProvider(resource=_resource())
     # Wraps the whole middleware stack, so the request log above runs inside
     # the span whatever order the middleware was added in.
     FastAPIInstrumentor.instrument_app(
         app,
         tracer_provider=provider,
-        excluded_urls=",".join(f"{path}$" for path in PROBE_PATHS),
+        meter_provider=meter_provider,
+        excluded_urls=",".join(f"^[^:]+://[^/]+{path}$" for path in PROBE_PATHS),
         # One span per ASGI message says nothing the request span does not.
         exclude_spans=["receive", "send"],
     )

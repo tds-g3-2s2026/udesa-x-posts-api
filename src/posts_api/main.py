@@ -7,8 +7,10 @@ from importlib.metadata import version
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -36,7 +38,7 @@ from posts_api.infrastructure.database.session import build_session_factory
 from posts_api.infrastructure.rabbitmq.event_consumer import EventConsumer
 from posts_api.infrastructure.rabbitmq.outbox_publisher import OutboxPublisher
 from posts_api.infrastructure.s3.image_storage import build_image_storage
-from posts_api.infrastructure.telemetry import export, instrument
+from posts_api.infrastructure.telemetry import create_meter_provider, export, instrument
 from posts_api.infrastructure.users_api.account_review import build_users_api_client
 
 
@@ -51,8 +53,10 @@ async def lifespan(app: FastAPI):
         format="%(asctime)s %(levelname)-8s %(name)s | %(message)s",
         force=True,
     )
+    logger_provider = None
+    metric_reader = None
     if settings.otel_exporter_otlp_endpoint:
-        export(tracer_provider, OTLPSpanExporter(), OTLPLogExporter())
+        logger_provider = export(tracer_provider, OTLPSpanExporter(), OTLPLogExporter())
 
     # Connections are opened once and shared. Creating an engine per request
     # exhausts the PostgreSQL pool as soon as there is any load.
@@ -82,22 +86,36 @@ async def lifespan(app: FastAPI):
     )
     publishing = asyncio.create_task(publisher.run())
 
-    yield
-
-    for task in (consuming, publishing):
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-    await images.aclose()
-    await app.state.engine.dispose()
-    await app.state.redis.aclose()
-    await app.state.auth_redis.aclose()
-    await app.state.users_api.aclose()
+    if settings.otel_exporter_otlp_endpoint:
+        metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
+        meter_provider.add_metric_reader(metric_reader)
+    try:
+        yield
+    finally:
+        try:
+            for task in (consuming, publishing):
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+            await images.aclose()
+            await app.state.engine.dispose()
+            await app.state.redis.aclose()
+            await app.state.auth_redis.aclose()
+            await app.state.users_api.aclose()
+        finally:
+            if metric_reader is not None:
+                try:
+                    metric_reader.force_flush()
+                finally:
+                    meter_provider.remove_metric_reader(metric_reader)
+            if logger_provider is not None:
+                logger_provider.shutdown()
 
 
 app = FastAPI(title="UdeSA-X Posts API", version=version("posts-api"), lifespan=lifespan)
 
-tracer_provider = instrument(app)
+meter_provider = create_meter_provider()
+tracer_provider = instrument(app, meter_provider)
 
 app.add_exception_handler(ProblemError, problem_error_handler)
 app.add_exception_handler(RequestValidationError, validation_error_handler)
