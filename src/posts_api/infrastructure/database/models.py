@@ -38,9 +38,6 @@ class UserProfileModel(Base):
         CheckConstraint(
             "visibility IN ('public', 'protected')", name="ck_user_profiles_visibility"
         ),
-        CheckConstraint(
-            "feed_language IN ('es', 'en', 'all')", name="ck_user_profiles_feed_language"
-        ),
     )
 
     # Not generated here: it is the same id the account has in users-api.
@@ -69,11 +66,26 @@ class UserProfileModel(Base):
     avatar_key: Mapped[str | None] = mapped_column(String(255), default=None)
     cover_key: Mapped[str | None] = mapped_column(String(255), default=None)
 
-    # A copy of what the account chose in users-api, kept up to date by its
-    # events. The instant of the last one applied: two changes in a row can
-    # arrive in the other order, and the older one must not win.
-    feed_language: Mapped[str] = mapped_column(String(8), default="all", server_default="all")
-    feed_language_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+class FeedPreferenceModel(Base):
+    """The language an account chose for its feed, a copy of what users-api keeps.
+
+    A table of its own and not columns of `user_profiles`, and with no foreign key
+    to it: the event can arrive before the account reaches this service, and a
+    profile row made from it would carry no handle and a made-up visibility,
+    which `find_profile` would then believe. No row here means no filter.
+    """
+
+    __tablename__ = "feed_preferences"
+    __table_args__ = (
+        CheckConstraint("language IN ('es', 'en', 'all')", name="ck_feed_preferences_language"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(postgresql.UUID(as_uuid=True), primary_key=True)
+    language: Mapped[str] = mapped_column(String(8))
+    # The instant of the last event applied: two changes in a row can arrive in
+    # the other order, and the older one must not win.
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class FollowModel(Base):

@@ -20,22 +20,17 @@ def upgrade() -> None:
     # NULL on the posts already published: they are not reprocessed.
     op.add_column("posts", sa.Column("language", sa.String(8), nullable=True))
     op.create_check_constraint("ck_posts_language", "posts", "language IN ('es', 'en', 'other')")
-    op.add_column(
-        "user_profiles",
-        sa.Column("feed_language", sa.String(8), nullable=False, server_default="all"),
-    )
-    op.create_check_constraint(
-        "ck_user_profiles_feed_language", "user_profiles", "feed_language IN ('es', 'en', 'all')"
-    )
-    op.add_column(
-        "user_profiles",
-        sa.Column("feed_language_at", sa.DateTime(timezone=True), nullable=True),
+    op.create_table(
+        "feed_preferences",
+        sa.Column("user_id", sa.UUID(), nullable=False),
+        sa.Column("language", sa.String(8), nullable=False),
+        sa.Column("changed_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("language IN ('es', 'en', 'all')", name="ck_feed_preferences_language"),
+        sa.PrimaryKeyConstraint("user_id"),
     )
 
 
 def downgrade() -> None:
-    op.drop_column("user_profiles", "feed_language_at")
-    op.drop_constraint("ck_user_profiles_feed_language", "user_profiles", type_="check")
-    op.drop_column("user_profiles", "feed_language")
+    op.drop_table("feed_preferences")
     op.drop_constraint("ck_posts_language", "posts", type_="check")
     op.drop_column("posts", "language")

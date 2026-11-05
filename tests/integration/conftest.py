@@ -8,6 +8,7 @@ from sqlalchemy import delete
 
 from posts_api.infrastructure.database.models import (
     BlockModel,
+    FeedPreferenceModel,
     FollowModel,
     FollowRequestModel,
     LikeModel,
@@ -47,6 +48,7 @@ async def api():
             await session.execute(delete(PostModel))
             await session.execute(delete(UserProfileModel))
             await session.execute(delete(OutboxModel))
+            await session.execute(delete(FeedPreferenceModel))
             await session.commit()
         # The rate limit counters live outside PostgreSQL, so emptying the
         # tables is not enough to leave one test independent from the next.

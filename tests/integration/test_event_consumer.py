@@ -10,7 +10,7 @@ import pytest
 from aio_pika import DeliveryMode, ExchangeType, Message
 
 from posts_api.api.event_handlers import build_event_handler
-from posts_api.infrastructure.database.models import UserProfileModel
+from posts_api.infrastructure.database.models import FeedPreferenceModel, UserProfileModel
 from posts_api.infrastructure.rabbitmq.event_consumer import (
     DEAD_LETTER_QUEUE,
     EXCHANGE,
@@ -110,8 +110,8 @@ async def test_a_change_of_preferences_from_the_exchange_reaches_the_profile(con
 
     async def is_kept() -> bool:
         async with app.state.session_factory() as session:
-            row = await session.get(UserProfileModel, reader)
-        return row is not None and row.feed_language == "es"
+            row = await session.get(FeedPreferenceModel, reader)
+        return row is not None and row.language == "es"
 
     await eventually(is_kept)
 

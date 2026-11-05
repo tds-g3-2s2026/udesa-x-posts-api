@@ -168,18 +168,19 @@ Cada post guarda su idioma al publicarse (`posts.language`): `es`, `en` u `other
 texto en otro idioma, uno sin texto o uno con confianza menor a 0,6. Los posts anteriores a esta
 columna quedan en `NULL` y no se reprocesan.
 
-Lo que eligió cada cuenta se guarda en `users-api`. `posts-api` tiene una copia en
-`user_profiles.feed_language`, que actualiza al consumir `preferences.changed.v1` de la cola
-`posts-api`. Dos cambios seguidos pueden llegar en otro orden, así que un evento más viejo que el
-último aplicado (`feed_language_at`) no cambia nada. Si la cuenta todavía no tiene fila, el evento
-la crea, para no perder lo que eligió antes de su primer pedido.
+Lo que eligió cada cuenta se guarda en `users-api`. `posts-api` tiene una copia en la tabla
+`feed_preferences`, que actualiza al consumir `preferences.changed.v1` de la cola `posts-api`. Dos
+cambios seguidos pueden llegar en otro orden, así que un evento más viejo que el último aplicado
+(`changed_at`) no cambia nada. Es una tabla aparte de `user_profiles`, sin clave foránea, porque el
+evento puede llegar antes que la cuenta: una fila de perfil creada con él no tendría handle ni la
+visibilidad real, y seguir a esa cuenta no pediría aprobación aunque fuera protegida. Sin fila en
+`feed_preferences`, no se filtra.
 
 `GET /feed` filtra en la misma consulta, antes de paginar. Con `es` o `en` muestra los posts de ese
 idioma; con `all`, todos. Un post `other` o `NULL` se muestra siempre, y un retweet va por el idioma
 de lo que comparte. El resto de las lecturas (un post, respuestas, perfil, búsqueda) no filtra.
 
-Una cuenta que eligió su idioma antes de que existiera este evento ve todos los idiomas hasta que
-vuelva a cambiarlo. Sin broker, el cambio espera en la `outbox` de `users-api` y el feed sigue con
+Sin broker, el cambio espera en la `outbox` de `users-api` y el feed sigue con
 la preferencia anterior.
 
 ## Revocación de sesiones

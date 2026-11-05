@@ -6,7 +6,11 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 
 from posts_api.api.event_handlers import build_event_handler
-from posts_api.infrastructure.database.models import PostModel, UserProfileModel
+from posts_api.infrastructure.database.models import (
+    FeedPreferenceModel,
+    PostModel,
+    UserProfileModel,
+)
 from posts_api.main import app
 from tests.conftest import requires_services
 from tests.events import body_of, preferences_changed
@@ -43,7 +47,7 @@ async def language_of(post_id: str) -> str | None:
 
 async def chosen_by(user_id: uuid.UUID) -> str:
     async with app.state.session_factory() as session:
-        return (await session.get(UserProfileModel, user_id)).feed_language
+        return (await session.get(FeedPreferenceModel, user_id)).language
 
 
 async def test_e1_h7_ca2_a_spanish_feed_hides_english_posts(api):
@@ -197,9 +201,29 @@ async def test_the_language_is_kept_for_an_account_that_never_reached_this_servi
     assert await choose(newcomer, "en") == "ack"
 
     assert await chosen_by(newcomer) == "en"
-    # Its first request fills in the rest of the copy without losing the choice.
-    await api.get("/users/suggested", headers=signed_in_as(newcomer))
-    assert await chosen_by(newcomer) == "en"
+
+
+async def test_an_event_does_not_make_up_a_profile(api):
+    """The event knows neither the handle nor the visibility: following on a row made
+    from it would let anybody follow a protected account without asking."""
+    newcomer, follower = uuid.uuid4(), uuid.uuid4()
+
+    await choose(newcomer, "es")
+
+    async with app.state.session_factory() as session:
+        assert await session.get(UserProfileModel, newcomer) is None
+    follow = await api.post(f"/users/{newcomer}/follow", headers=signed_in_as(follower))
+    assert follow.status_code == 404
+
+
+async def test_the_first_request_of_an_account_keeps_what_it_chose_before(api):
+    reader, author = uuid.uuid4(), uuid.uuid4()
+    await choose(reader, "es")
+    await insert_follow(reader, author)
+    await publish(api, author, SPANISH)
+    await publish(api, author, ENGLISH)
+
+    assert await feed_of(api, reader) == [SPANISH]
 
 
 async def test_an_older_event_arriving_late_does_not_undo_a_newer_one(api):
