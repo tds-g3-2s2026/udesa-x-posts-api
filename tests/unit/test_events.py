@@ -4,15 +4,15 @@ from datetime import UTC, datetime
 
 import pytest
 
-from posts_api.app.events import InvalidEventError, parse_user_deleted
-from tests.events import CONTRACTS, body_of, user_deleted
+from posts_api.app.events import InvalidEventError, PreferencesChanged, parse_event
+from tests.events import CONTRACTS, body_of, preferences_changed, user_deleted
 
 
 def test_the_example_of_the_contract_is_read():
     schema = json.loads((CONTRACTS / "user.deleted.v1.json").read_text(encoding="utf-8"))
     example = schema["examples"][0]
 
-    event = parse_user_deleted(json.dumps(example).encode())
+    event = parse_event(json.dumps(example).encode())
 
     assert str(event.event_id) == example["id"]
     assert str(event.user_id) == example["data"]["user_id"]
@@ -22,7 +22,7 @@ def test_the_example_of_the_contract_is_read():
 def test_the_time_of_the_envelope_is_when_the_account_was_closed():
     at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 
-    event = parse_user_deleted(body_of(user_deleted(uuid.uuid4(), at=at)))
+    event = parse_event(body_of(user_deleted(uuid.uuid4(), at=at)))
 
     assert event.at == at
 
@@ -32,7 +32,7 @@ def test_fields_the_service_does_not_know_are_ignored():
     event["data"]["reason"] = "requested by the owner"
     event["traceparent"] = "00-abc"
 
-    assert parse_user_deleted(body_of(event)).user_id == uuid.UUID(event["data"]["user_id"])
+    assert parse_event(body_of(event)).user_id == uuid.UUID(event["data"]["user_id"])
 
 
 @pytest.mark.parametrize(
@@ -56,10 +56,30 @@ def test_a_message_that_is_not_a_user_deleted_event_is_invalid(mutate):
     mutate(event)
 
     with pytest.raises(InvalidEventError):
-        parse_user_deleted(body_of(event))
+        parse_event(body_of(event))
 
 
 @pytest.mark.parametrize("body", [b"not json", b"[]", b'"text"', b"null", b"\xff\xfe"])
 def test_a_body_that_is_not_an_object_is_invalid(body):
     with pytest.raises(InvalidEventError):
-        parse_user_deleted(body)
+        parse_event(body)
+
+
+def test_the_example_of_the_preferences_contract_is_read():
+    schema = json.loads((CONTRACTS / "preferences.changed.v1.json").read_text(encoding="utf-8"))
+    example = schema["examples"][0]
+
+    event = parse_event(json.dumps(example).encode())
+
+    assert isinstance(event, PreferencesChanged)
+    assert str(event.user_id) == example["data"]["user_id"]
+    assert event.feed_language == "es"
+    assert event.at == datetime(2026, 11, 5, 15, 20, tzinfo=UTC)
+
+
+def test_a_change_of_preferences_without_the_language_is_refused():
+    event = preferences_changed(uuid.uuid4(), "es")
+    event["data"].pop("feed_language")
+
+    with pytest.raises(InvalidEventError):
+        parse_event(body_of(event))

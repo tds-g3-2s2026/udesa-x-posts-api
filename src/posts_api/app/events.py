@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 USER_DELETED = "user.deleted.v1"
+PREFERENCES_CHANGED = "preferences.changed.v1"
 
 SOURCE = "posts-api"
 SPEC_VERSION = "1.0"
@@ -42,15 +43,31 @@ class UserDeleted:
     at: datetime
 
 
-def parse_user_deleted(body: bytes) -> UserDeleted:
+@dataclass(frozen=True)
+class PreferencesChanged:
+    event_id: uuid.UUID
+    user_id: uuid.UUID
+    # A string and not a closed type: a value this version does not know is a
+    # compatible change of the contract, and whoever handles it decides.
+    feed_language: str
+    # `time` of the envelope: when users-api saved the change.
+    at: datetime
+
+
+def parse_event(body: bytes) -> UserDeleted | PreferencesChanged:
+    """The event in the message, or `InvalidEventError` if it is not one this service reads."""
     try:
         envelope = json.loads(body)
     except ValueError as exc:
         raise InvalidEventError("The body is not JSON") from exc
     if not isinstance(envelope, dict):
         raise InvalidEventError("The body is not an object")
-    if envelope.get("specversion") != "1.0" or envelope.get("type") != USER_DELETED:
-        raise InvalidEventError(f"Not a {USER_DELETED} event")
+    event_type = envelope.get("type")
+    if envelope.get("specversion") != "1.0" or event_type not in (
+        USER_DELETED,
+        PREFERENCES_CHANGED,
+    ):
+        raise InvalidEventError(f"Not an event this service reads: {event_type}")
     data = envelope.get("data")
     if not isinstance(data, dict):
         raise InvalidEventError("The event has no data")
@@ -58,11 +75,16 @@ def parse_user_deleted(body: bytes) -> UserDeleted:
         event_id = uuid.UUID(str(envelope["id"]))
         user_id = uuid.UUID(str(data["user_id"]))
         at = datetime.fromisoformat(str(envelope["time"]))
+        feed_language = str(data["feed_language"]) if event_type == PREFERENCES_CHANGED else None
     except (KeyError, ValueError) as exc:
         raise InvalidEventError("The event is missing a field or it is malformed") from exc
     if at.tzinfo is None:
         raise InvalidEventError("The time of the event has no time zone")
-    return UserDeleted(event_id=event_id, user_id=user_id, at=at)
+    if feed_language is None:
+        return UserDeleted(event_id=event_id, user_id=user_id, at=at)
+    return PreferencesChanged(
+        event_id=event_id, user_id=user_id, feed_language=feed_language, at=at
+    )
 
 
 @dataclass(frozen=True)

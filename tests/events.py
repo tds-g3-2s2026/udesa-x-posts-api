@@ -18,6 +18,7 @@ def _validator(name: str) -> Draft202012Validator:
 USER_DELETED = _validator("user.deleted.v1")
 FOLLOW_CREATED = _validator("follow.created.v1")
 ADMIN_ACTION_RECORDED = _validator("admin.action_recorded.v1")
+PREFERENCES_CHANGED = _validator("preferences.changed.v1")
 
 
 def user_deleted(
@@ -33,6 +34,20 @@ def user_deleted(
         "data": {"user_id": str(user_id)},
     }
     USER_DELETED.validate(event)
+    return event
+
+
+def preferences_changed(user_id: uuid.UUID, language: str, *, at: datetime | None = None) -> dict:
+    """A `preferences.changed.v1` message, checked against the schema before it is used."""
+    event = {
+        "specversion": "1.0",
+        "id": str(uuid.uuid4()),
+        "source": "users-api",
+        "type": "preferences.changed.v1",
+        "time": (at or datetime.now(UTC)).isoformat().replace("+00:00", "Z"),
+        "data": {"user_id": str(user_id), "feed_language": language},
+    }
+    PREFERENCES_CHANGED.validate(event)
     return event
 
 
