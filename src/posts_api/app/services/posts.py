@@ -26,6 +26,7 @@ from posts_api.app.models.follow import Account
 from posts_api.app.models.post import Post, PostWithAuthor
 from posts_api.app.pagination import Cursor
 from posts_api.app.repositories.follows import FollowRepository
+from posts_api.app.repositories.language_detector import LanguageDetector
 from posts_api.app.repositories.likes import LikeRepository
 from posts_api.app.repositories.posts import PostRepository
 from posts_api.app.repositories.rate_limiter import RateLimiter
@@ -80,12 +81,14 @@ class PostService:
         retweets: RetweetRepository,
         images: PostImages,
         *,
+        languages: LanguageDetector,
         post_limit: int,
         window_seconds: int,
     ) -> None:
         self._likes = likes
         self._retweets = retweets
         self._images = images
+        self._languages = languages
         self._posts = posts
         self._follows = follows
         self._rate_limiter = rate_limiter
@@ -141,9 +144,10 @@ class PostService:
             )
 
         formats = self._formats_of(images)
+        language = self._languages.detect(sanitized)
 
         if parent_id is None:
-            post = await self._posts.create(author.id, sanitized)
+            post = await self._posts.create(author.id, sanitized, language=language)
             if not images:
                 return post
             return replace(post, images=await self._images.save(post.id, images, formats))
@@ -160,7 +164,9 @@ class PostService:
                 title="No se pudo responder",
                 detail="Esta publicación fue eliminada.",
             )
-        reply = await self._posts.create(author.id, sanitized, parent_id=parent_id)
+        reply = await self._posts.create(
+            author.id, sanitized, language=language, parent_id=parent_id
+        )
         # Same transaction as the insert: either both land or neither does.
         await self._posts.count_reply(parent_id)
         return reply

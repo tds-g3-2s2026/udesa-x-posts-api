@@ -35,6 +35,7 @@ from posts_api.app.errors import ProblemError
 from posts_api.app.security import load_public_key
 from posts_api.config.settings import API_PREFIX, get_settings
 from posts_api.infrastructure.database.session import build_session_factory
+from posts_api.infrastructure.language.lingua_detector import LinguaLanguageDetector
 from posts_api.infrastructure.rabbitmq.event_consumer import EventConsumer
 from posts_api.infrastructure.rabbitmq.outbox_publisher import OutboxPublisher
 from posts_api.infrastructure.s3.image_storage import build_image_storage
@@ -74,6 +75,7 @@ async def lifespan(app: FastAPI):
     images = build_image_storage(settings)
     await images.start()
     app.state.image_storage = images
+    app.state.language_detector = LinguaLanguageDetector()
     # Tasks of their own: the service answers requests while the broker is down.
     # The consumer retries on its own, and the events to publish wait in the outbox.
     consumer = EventConsumer(settings.rabbitmq_url, build_event_handler(app.state.session_factory))
