@@ -13,8 +13,11 @@ E3-H1 a H10 y E3-H5.
 - Persistencia y migraciones: PostgreSQL (SQLAlchemy 2 async con asyncpg) / Alembic
 - Imágenes de los posts, foto de perfil y portada: bucket privado de S3 vía `aioboto3`, detrás
   de la interfaz `ImageStorage`; el multipart se lee a mano con `python-multipart` (ADR-018)
-- Mensajería: RabbitMQ con `aio-pika` (ADR-019). Consume `user.deleted.v1` en la cola
-  `posts-api` (`infrastructure/rabbitmq/`), con su DLQ `posts-api.dlq`
+- Detección de idioma de los posts: `lingua-language-detector` (ADR-024), detrás de la interfaz
+  `LanguageDetector`
+- Mensajería: RabbitMQ con `aio-pika` (ADR-019). Consume `user.deleted.v1` y
+  `preferences.changed.v1` en la cola `posts-api` (`infrastructure/rabbitmq/`), con su DLQ
+  `posts-api.dlq`
 - Cache y estado efímero: Redis `/1` (rate limit de follows y posts). Lee además, en solo
   lectura, el Redis `/0` de `users-api` para las revocaciones de sesión (ADR-014)
 

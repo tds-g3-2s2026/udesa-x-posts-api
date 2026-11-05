@@ -1,4 +1,4 @@
-"""Read followed activity with a single order, visibility and mute check before paging."""
+"""Read followed activity with a single order, visibility, mute and language check before paging."""
 
 import uuid
 
@@ -9,6 +9,7 @@ from sqlalchemy.orm import aliased
 from posts_api.app.feed_pagination import FeedCursor
 from posts_api.app.models.post import PostWithAuthor
 from posts_api.app.pagination import DEFAULT_PAGE_SIZE
+from posts_api.app.repositories.feed_language import in_feed_language_of
 from posts_api.app.repositories.likes import liked_by
 from posts_api.app.repositories.mutes import muted_by_viewer
 from posts_api.app.repositories.post_visibility import visible_to
@@ -100,6 +101,9 @@ class FeedRepository:
                 ),
                 # A muted author leaves too when somebody else retweets them.
                 not_(muted_by_viewer(viewer_id, PostModel.author_id)),
+                # On the post and not on the activity: a retweet goes by the
+                # language of what it shares.
+                in_feed_language_of(viewer_id),
             )
         )
         if cursor is not None:

@@ -161,6 +161,27 @@ cuenta está cerrada, y la app dibuja el avatar por defecto. Si una URL no se pu
 `null` en vez de fallar la página. Las listas de seguidores, seguidos y sugeridos siguen con
 `avatarUrl` en `null`.
 
+## Idioma del feed
+
+Cada post guarda su idioma al publicarse (`posts.language`): `es`, `en` u `other`. Lo detecta
+`lingua-language-detector` adentro del servicio, sin llamadas externas (ADR-024). Queda `other` un
+texto en otro idioma, uno sin texto o uno con confianza menor a 0,6. Los posts anteriores a esta
+columna quedan en `NULL` y no se reprocesan.
+
+Lo que eligió cada cuenta se guarda en `users-api`. `posts-api` tiene una copia en
+`user_profiles.feed_language`, que actualiza al consumir `preferences.changed.v1` de la cola
+`posts-api`. Dos cambios seguidos pueden llegar en otro orden, así que un evento más viejo que el
+último aplicado (`feed_language_at`) no cambia nada. Si la cuenta todavía no tiene fila, el evento
+la crea, para no perder lo que eligió antes de su primer pedido.
+
+`GET /feed` filtra en la misma consulta, antes de paginar. Con `es` o `en` muestra los posts de ese
+idioma; con `all`, todos. Un post `other` o `NULL` se muestra siempre, y un retweet va por el idioma
+de lo que comparte. El resto de las lecturas (un post, respuestas, perfil, búsqueda) no filtra.
+
+Una cuenta que eligió su idioma antes de que existiera este evento ve todos los idiomas hasta que
+vuelva a cambiarlo. Sin broker, el cambio espera en la `outbox` de `users-api` y el feed sigue con
+la preferencia anterior.
+
 ## Revocación de sesiones
 
 Un token firmado y vigente no alcanza: `users-api` puede haberlo revocado antes de que venza
