@@ -18,7 +18,7 @@ from aio_pika import ExchangeType, RobustConnection
 from aio_pika.abc import AbstractIncomingMessage, AbstractQueue, AbstractRobustConnection
 from aio_pika.connection import make_url
 
-from posts_api.app.events import USER_DELETED, Outcome
+from posts_api.app.events import PREFERENCES_CHANGED, USER_DELETED, Outcome
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ EXCHANGE = "udesa-x.events"
 DEAD_LETTER_EXCHANGE = "udesa-x.events.dlx"
 QUEUE = "posts-api"
 DEAD_LETTER_QUEUE = "posts-api.dlq"
-BINDINGS = (USER_DELETED,)
+BINDINGS = (USER_DELETED, PREFERENCES_CHANGED)
 
 # Messages held unacked at once.
 PREFETCH = 10

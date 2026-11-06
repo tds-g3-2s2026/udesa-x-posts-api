@@ -26,6 +26,7 @@ from posts_api.app.models.follow import Account, ProfileVisibility
 from posts_api.app.repositories.administrator_directory import AdministratorDirectory
 from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.image_storage import ImageStorage
+from posts_api.app.repositories.language_detector import LanguageDetector
 from posts_api.app.repositories.outbox import OutboxRepository
 from posts_api.app.repositories.post_media import PostMediaRepository
 from posts_api.app.repositories.profile_images import ProfileImageRepository
@@ -79,6 +80,14 @@ def get_image_storage(request: Request) -> ImageStorage:
 
 
 ImageStorageDep = Annotated[ImageStorage, Depends(get_image_storage)]
+
+
+def get_language_detector(request: Request) -> LanguageDetector:
+    """What tells the language of a post, with its models loaded once in the lifespan."""
+    return request.app.state.language_detector
+
+
+LanguageDetectorDep = Annotated[LanguageDetector, Depends(get_language_detector)]
 
 
 def get_post_images(session: SessionDep, storage: ImageStorageDep) -> PostImages:

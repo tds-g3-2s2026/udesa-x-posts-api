@@ -163,6 +163,7 @@ async def test_deletion_rolls_back_relations_and_timestamp_together(api, monkeyp
             LikeRepository(session),
             RetweetRepository(session),
             None,
+            languages=None,
             post_limit=100,
             window_seconds=3600,
         )
@@ -330,6 +331,7 @@ async def test_deletion_waits_for_an_accepted_report_and_preserves_it(api, monke
                 LikeRepository(session),
                 RetweetRepository(session),
                 None,
+                languages=None,
                 post_limit=100,
                 window_seconds=3600,
             )

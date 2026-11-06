@@ -10,7 +10,7 @@ import pytest
 from aio_pika import DeliveryMode, ExchangeType, Message
 
 from posts_api.api.event_handlers import build_event_handler
-from posts_api.infrastructure.database.models import UserProfileModel
+from posts_api.infrastructure.database.models import FeedPreferenceModel, UserProfileModel
 from posts_api.infrastructure.rabbitmq.event_consumer import (
     DEAD_LETTER_QUEUE,
     EXCHANGE,
@@ -19,7 +19,7 @@ from posts_api.infrastructure.rabbitmq.event_consumer import (
 )
 from posts_api.main import app
 from tests.conftest import BROKER_URL, requires_broker
-from tests.events import body_of, user_deleted
+from tests.events import body_of, preferences_changed, user_deleted
 from tests.integration.conftest import given_a_profile
 
 pytestmark = requires_broker
@@ -98,6 +98,22 @@ async def test_an_event_from_the_exchange_closes_the_account(consuming, broker):
     await publish(exchange, body_of(event), message_id=event["id"])
 
     await eventually(lambda: is_closed(leaving))
+
+
+async def test_a_change_of_preferences_from_the_exchange_reaches_the_profile(consuming, broker):
+    _, exchange = broker
+    reader = uuid.uuid4()
+
+    await publish(
+        exchange, body_of(preferences_changed(reader, "es")), key="preferences.changed.v1"
+    )
+
+    async def is_kept() -> bool:
+        async with app.state.session_factory() as session:
+            row = await session.get(FeedPreferenceModel, reader)
+        return row is not None and row.language == "es"
+
+    await eventually(is_kept)
 
 
 async def test_the_same_event_delivered_twice_is_harmless(consuming, broker):

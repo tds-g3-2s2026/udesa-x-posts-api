@@ -6,7 +6,13 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 
-from posts_api.api.deps import CurrentUserDep, PostImagesDep, RedisDep, SessionDep
+from posts_api.api.deps import (
+    CurrentUserDep,
+    LanguageDetectorDep,
+    PostImagesDep,
+    RedisDep,
+    SessionDep,
+)
 from posts_api.api.multipart import is_multipart, read_post_form
 from posts_api.api.schemas.feed import FeedPostSummary
 from posts_api.api.schemas.pagination import CursorPage
@@ -22,8 +28,13 @@ from posts_api.infrastructure.redis.rate_limiter import RedisRateLimiter
 router = APIRouter(prefix="/posts", tags=["posts"])
 
 
-def get_post_service(session: SessionDep, redis: RedisDep, images: PostImagesDep) -> PostService:
-    """Where the service gets its collaborators: PostgreSQL, Redis and the image storage."""
+def get_post_service(
+    session: SessionDep,
+    redis: RedisDep,
+    images: PostImagesDep,
+    languages: LanguageDetectorDep,
+) -> PostService:
+    """Where the service gets its collaborators: PostgreSQL, Redis, images and languages."""
     settings = get_settings()
     return PostService(
         PostRepository(session),
@@ -32,6 +43,7 @@ def get_post_service(session: SessionDep, redis: RedisDep, images: PostImagesDep
         LikeRepository(session),
         RetweetRepository(session),
         images,
+        languages=languages,
         post_limit=settings.post_rate_limit,
         window_seconds=settings.post_rate_window_seconds,
     )

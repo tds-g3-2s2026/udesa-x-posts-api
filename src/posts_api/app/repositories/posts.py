@@ -65,9 +65,16 @@ class PostRepository:
         self._session = session
 
     async def create(
-        self, author_id: uuid.UUID, content: str, *, parent_id: uuid.UUID | None = None
+        self,
+        author_id: uuid.UUID,
+        content: str,
+        *,
+        language: str,
+        parent_id: uuid.UUID | None = None,
     ) -> Post:
-        row = PostModel(author_id=author_id, content=content, parent_id=parent_id)
+        row = PostModel(
+            author_id=author_id, content=content, language=language, parent_id=parent_id
+        )
         self._session.add(row)
         # Flushed so the row gets its id and timestamp from PostgreSQL before
         # the response is built, without closing the transaction.

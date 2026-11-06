@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:udesa-x:eventos:preferences.changed.v1",
+  "title": "preferences.changed.v1",
+  "description": "Una cuenta cambió el idioma de su feed. Lo publica users-api; posts-api guarda una copia para filtrar el feed.",
+  "type": "object",
+  "required": ["specversion", "id", "source", "type", "time", "data"],
+  "additionalProperties": false,
+  "properties": {
+    "specversion": { "const": "1.0" },
+    "id": {
+      "description": "Identificador único del evento. El consumidor lo usa para descartar repetidos.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "source": { "const": "users-api" },
+    "type": { "const": "preferences.changed.v1" },
+    "time": {
+      "description": "Instante en que se guardó el cambio. El consumidor ignora un evento más viejo que el último que aplicó, porque dos cambios seguidos pueden llegar en otro orden.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "data": {
+      "type": "object",
+      "required": ["user_id", "feed_language"],
+      "additionalProperties": false,
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "feed_language": {
+          "description": "El idioma elegido para el feed. `all` no filtra.",
+          "type": "string",
+          "enum": ["es", "en", "all"]
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "specversion": "1.0",
+      "id": "0199f3c4-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+      "source": "users-api",
+      "type": "preferences.changed.v1",
+      "time": "2026-11-05T15:20:00Z",
+      "data": {
+        "user_id": "7a1d3c9b-2e4f-4a6b-8d0c-1f3e5a7b9c2d",
+        "feed_language": "es"
+      }
+    }
+  ]
+}
