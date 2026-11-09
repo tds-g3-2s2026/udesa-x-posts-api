@@ -19,6 +19,7 @@ USER_DELETED = _validator("user.deleted.v1")
 FOLLOW_CREATED = _validator("follow.created.v1")
 ADMIN_ACTION_RECORDED = _validator("admin.action_recorded.v1")
 PREFERENCES_CHANGED = _validator("preferences.changed.v1")
+INVITATION_ACCEPTED = _validator("invitation.accepted.v1")
 
 
 def user_deleted(
@@ -48,6 +49,32 @@ def preferences_changed(user_id: uuid.UUID, language: str, *, at: datetime | Non
         "data": {"user_id": str(user_id), "feed_language": language},
     }
     PREFERENCES_CHANGED.validate(event)
+    return event
+
+
+def invitation_accepted(
+    invitee_id: uuid.UUID,
+    inviter_id: uuid.UUID,
+    *,
+    inviter_visibility: str = "public",
+    event_id: uuid.UUID | None = None,
+) -> dict:
+    """An `invitation.accepted.v1` message, checked against the schema before it is used."""
+    event = {
+        "specversion": "1.0",
+        "id": str(event_id or uuid.uuid4()),
+        "source": "users-api",
+        "type": "invitation.accepted.v1",
+        "time": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "data": {
+            "invitee_id": str(invitee_id),
+            "invitee_handle": f"@i{str(invitee_id)[:8]}",
+            "inviter_id": str(inviter_id),
+            "inviter_handle": f"@v{str(inviter_id)[:8]}",
+            "inviter_visibility": inviter_visibility,
+        },
+    }
+    INVITATION_ACCEPTED.validate(event)
     return event
 
 
