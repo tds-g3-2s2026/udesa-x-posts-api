@@ -9,10 +9,11 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, null, select, update
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from posts_api.app.hashtags import hashtag_positions
 from posts_api.app.models.post import Post, PostWithAuthor
 from posts_api.app.pagination import DEFAULT_PAGE_SIZE, Cursor, apply_cursor, page_of
 from posts_api.app.repositories.likes import liked_by
@@ -91,8 +92,18 @@ class PostRepository:
         return _to_post(row)
 
     async def search(
-        self, query: str, viewer_id: uuid.UUID, *, cursor: Cursor | None
+        self,
+        query: str,
+        viewer_id: uuid.UUID,
+        *,
+        cursor: Cursor | None,
+        hashtag: str | None = None,
     ) -> tuple[list[tuple[PostWithAuthor, list[int]]], str | None]:
+        """Posts matching the text of `query`, or carrying `hashtag` when one is given.
+
+        A hashtag is looked up in `post_hashtags`, not in the text: it matches
+        the exact tag and not words that merely start with it.
+        """
         escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         positions = (
             func.generate_series(1, func.char_length(PostModel.content) - len(query) + 1)
@@ -112,11 +123,19 @@ class PostRepository:
             .correlate(PostModel)
             .scalar_subquery()
         )
+        if hashtag is None:
+            matches = PostModel.content.ilike(f"%{escaped}%", escape="\\")
+        else:
+            matches = PostModel.id.in_(
+                select(PostHashtagModel.post_id).where(PostHashtagModel.tag == hashtag)
+            )
         statement = (
-            select(PostModel, UserProfileModel.handle, match_positions)
+            select(
+                PostModel, UserProfileModel.handle, match_positions if hashtag is None else null()
+            )
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
             .where(
-                PostModel.content.ilike(f"%{escaped}%", escape="\\"),
+                matches,
                 PostModel.deleted_at.is_(None),
                 visible_to(
                     viewer_id,
@@ -132,7 +151,10 @@ class PostRepository:
             )
         )
         posts = [
-            (_to_post_with_author(post, handle, None, False, False), positions or [])
+            (
+                _to_post_with_author(post, handle, None, False, False),
+                hashtag_positions(post.content, hashtag) if hashtag else positions or [],
+            )
             for post, handle, positions in rows
         ]
         return page_of(

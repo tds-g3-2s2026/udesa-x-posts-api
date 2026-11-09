@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from posts_api.api.deps import CurrentUserDep, SessionDep
 from posts_api.api.schemas.pagination import CursorPage
+from posts_api.app.hashtags import hashtag_searched
 from posts_api.app.pagination import Cursor
 from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.posts import PostRepository
@@ -42,7 +43,7 @@ async def search_posts(
     decoded = Cursor.decode(cursor) if cursor is not None else None
     await FollowRepository(session).ensure_profile(current_user)
     results, next_cursor = await PostRepository(session).search(
-        query, current_user.id, cursor=decoded
+        query, current_user.id, cursor=decoded, hashtag=hashtag_searched(query)
     )
     return CursorPage(
         items=[
