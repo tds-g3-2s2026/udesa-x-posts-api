@@ -258,6 +258,22 @@ class PostModel(Base):
     replies_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
+class PostHashtagModel(Base):
+    """A hashtag written in a post: lower-cased, without the `#`, once per post."""
+
+    __tablename__ = "post_hashtags"
+    __table_args__ = (
+        # The primary key leads with `post_id`; searching a hashtag leads with the
+        # tag, and carrying `post_id` lets that lookup read the index alone.
+        Index("ix_post_hashtags_tag_post", "tag", "post_id"),
+    )
+
+    post_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("posts.id"), primary_key=True
+    )
+    tag: Mapped[str] = mapped_column(String(280), primary_key=True)
+
+
 class ReportModel(Base):
     """One account reporting another, optionally from one of its posts."""
 
