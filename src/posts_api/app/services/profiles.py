@@ -118,13 +118,16 @@ class ProfileService:
         if await self._blocked_either_way(user_id, viewer.id):
             raise profile_not_found()
         target = await self._follows.find_profile(user_id)
-        if target is not None:
+        if target is not None and target.handle is not None:
             return target, None
-        if await self._follows.profile_is_deleted(user_id):
+        if target is None and await self._follows.profile_is_deleted(user_id):
             raise profile_not_found()
         try:
             details = await self._directory.details_of(user_id)
         except UserDirectoryUnavailableError as error:
+            if target is not None:
+                # Made by an event, so it only lacks the handle: worth showing as it is.
+                return target, None
             raise ProblemError(
                 status=503,
                 code="profile-unavailable",

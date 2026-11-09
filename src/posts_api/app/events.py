@@ -50,6 +50,9 @@ class PreferencesChanged:
     # A string and not a closed type: a value this version does not know is a
     # compatible change of the contract, and whoever handles it decides.
     feed_language: str
+    # Absent from the events published before the contract carried it: those do
+    # not say anything about the visibility.
+    profile_visibility: str | None
     # `time` of the envelope: when users-api saved the change.
     at: datetime
 
@@ -82,8 +85,13 @@ def parse_event(body: bytes) -> UserDeleted | PreferencesChanged:
         raise InvalidEventError("The time of the event has no time zone")
     if feed_language is None:
         return UserDeleted(event_id=event_id, user_id=user_id, at=at)
+    profile_visibility = data.get("profile_visibility")
     return PreferencesChanged(
-        event_id=event_id, user_id=user_id, feed_language=feed_language, at=at
+        event_id=event_id,
+        user_id=user_id,
+        feed_language=feed_language,
+        profile_visibility=str(profile_visibility) if profile_visibility is not None else None,
+        at=at,
     )
 
 

@@ -37,8 +37,17 @@ def user_deleted(
     return event
 
 
-def preferences_changed(user_id: uuid.UUID, language: str, *, at: datetime | None = None) -> dict:
-    """A `preferences.changed.v1` message, checked against the schema before it is used."""
+def preferences_changed(
+    user_id: uuid.UUID,
+    language: str,
+    *,
+    visibility: str | None = None,
+    at: datetime | None = None,
+) -> dict:
+    """A `preferences.changed.v1` message, checked against the schema before it is used.
+
+    Without `visibility` it is the message published before the contract carried one.
+    """
     event = {
         "specversion": "1.0",
         "id": str(uuid.uuid4()),
@@ -47,6 +56,8 @@ def preferences_changed(user_id: uuid.UUID, language: str, *, at: datetime | Non
         "time": (at or datetime.now(UTC)).isoformat().replace("+00:00", "Z"),
         "data": {"user_id": str(user_id), "feed_language": language},
     }
+    if visibility is not None:
+        event["data"]["profile_visibility"] = visibility
     PREFERENCES_CHANGED.validate(event)
     return event
 

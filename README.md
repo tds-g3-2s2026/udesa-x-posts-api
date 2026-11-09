@@ -172,9 +172,21 @@ Lo que eligió cada cuenta se guarda en `users-api`. `posts-api` tiene una copia
 `feed_preferences`, que actualiza al consumir `preferences.changed.v1` de la cola `posts-api`. Dos
 cambios seguidos pueden llegar en otro orden, así que un evento más viejo que el último aplicado
 (`changed_at`) no cambia nada. Es una tabla aparte de `user_profiles`, sin clave foránea, porque el
-evento puede llegar antes que la cuenta: una fila de perfil creada con él no tendría handle ni la
-visibilidad real, y seguir a esa cuenta no pediría aprobación aunque fuera protegida. Sin fila en
-`feed_preferences`, no se filtra.
+evento puede llegar antes que la cuenta: un evento sin visibilidad, como los que se publicaron antes
+de que el campo existiera, no puede crear una fila de perfil, porque nacería pública y seguir a esa
+cuenta no pediría aprobación aunque fuera protegida. Sin fila en `feed_preferences`, no se filtra.
+
+La visibilidad de cada cuenta también se guarda en `users-api`, y `posts-api` tiene una copia en
+`user_profiles.visibility` que fija el mismo evento, con `profile_visibility`. Se guarda el instante
+del último evento aplicado (`visibility_changed_at`), así que uno más viejo o repetido no cambia
+nada, y una cuenta cerrada se queda como está. Si el evento llega antes que la cuenta, crea el
+perfil con la visibilidad real y sin handle, que completa el primer pedido de su dueña o quien abra
+su perfil. El token solo crea el perfil si falta: nunca reescribe una visibilidad guardada. Pasan
+unos segundos entre el cambio y su aplicación.
+
+Orden de despliegue: platform, después `posts-api` y al final `users-api`. La migración 0009 de
+`users-api` reenvía el estado de todas las cuentas vivas, y necesita este servicio ya desplegado y
+su cola ligada al evento.
 
 `GET /feed` filtra en la misma consulta, antes de paginar. Con `es` o `en` muestra los posts de ese
 idioma; con `all`, todos. Un post `other` o `NULL` se muestra siempre, y un retweet va por el idioma

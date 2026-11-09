@@ -74,7 +74,15 @@ def test_the_example_of_the_preferences_contract_is_read():
     assert isinstance(event, PreferencesChanged)
     assert str(event.user_id) == example["data"]["user_id"]
     assert event.feed_language == "es"
+    assert event.profile_visibility == "protected"
     assert event.at == datetime(2026, 11, 5, 15, 20, tzinfo=UTC)
+
+
+def test_a_change_of_preferences_published_before_the_visibility_existed_is_read():
+    event = parse_event(body_of(preferences_changed(uuid.uuid4(), "es")))
+
+    assert isinstance(event, PreferencesChanged)
+    assert event.profile_visibility is None
 
 
 def test_a_change_of_preferences_without_the_language_is_refused():
