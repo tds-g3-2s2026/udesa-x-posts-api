@@ -1,9 +1,8 @@
-"""ensure_profile keeping its local copy of visibility in step with the token.
+"""ensure_profile creating a profile from the token, and never rewriting one.
 
-The handle is backfilled once and never touched again (it cannot change at
-users-api). Visibility is the opposite: it can change at any time, so every
-authenticated request is a chance to notice the token disagrees with what is
-stored and correct it.
+The token is up to 15 minutes old, so it is a fine source for a profile that
+does not exist yet and a bad one for a profile that does: a change that already
+arrived by event would be undone by it.
 """
 
 import uuid
@@ -33,11 +32,11 @@ async def test_a_first_request_creates_the_profile_with_the_token_visibility(api
     assert await visibility_of(user) == "protected"
 
 
-async def test_a_later_request_updates_a_stored_profile_that_disagrees(api):
+async def test_a_later_request_does_not_rewrite_a_stored_profile_that_disagrees(api):
     user = uuid.uuid4()
-    await given_a_profile(user, visibility="public")
+    await given_a_profile(user, visibility="protected")
 
-    await api.get("/follow-requests", headers=signed_in_as(user, profile_visibility="protected"))
+    await api.get("/follow-requests", headers=signed_in_as(user, profile_visibility="public"))
 
     assert await visibility_of(user) == "protected"
 
@@ -49,16 +48,4 @@ async def test_a_request_with_no_visibility_claim_leaves_the_stored_value_alone(
 
     await api.get("/follow-requests", headers=signed_in_as(user, profile_visibility=None))
 
-    assert await visibility_of(user) == "protected"
-
-
-async def test_a_request_that_already_agrees_does_not_touch_the_row(api):
-    user = uuid.uuid4()
-    await given_a_profile(user, visibility="protected")
-
-    response = await api.get(
-        "/follow-requests", headers=signed_in_as(user, profile_visibility="protected")
-    )
-
-    assert response.status_code == 200
     assert await visibility_of(user) == "protected"

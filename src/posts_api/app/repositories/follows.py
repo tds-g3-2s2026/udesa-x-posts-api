@@ -6,8 +6,9 @@ changes, it changes here and nowhere else.
 """
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,28 +51,36 @@ class FollowRepository:
         return row is not None and row.deleted_at is not None
 
     async def create_profile_if_missing(self, account: Account) -> UserProfile | None:
+        """Make the profile from what users-api just said, or complete the one an event made.
+
+        A profile made by a visibility event has no handle. Here the handle is
+        filled in, and the visibility is left alone: the event is what keeps it
+        in step, and this lookup could be older than the last one applied.
+        """
         await self._session.execute(
             insert(UserProfileModel)
             .values(
                 id=account.id, handle=account.handle, visibility=account.profile_visibility.value
             )
-            .on_conflict_do_nothing(index_elements=[UserProfileModel.id])
+            .on_conflict_do_update(
+                index_elements=[UserProfileModel.id],
+                set_={"handle": account.handle},
+                where=UserProfileModel.handle.is_(None),
+            )
         )
         return await self.find_profile(account.id)
 
     async def ensure_profile(self, account: Account) -> UserProfile:
         """The profile of whoever is signed in, created the first time they appear.
 
-        No event arrives from users-api yet, so every authenticated request
-        carrying a fresher token than what is stored is what keeps this copy
-        from drifting: the token is at most 15 minutes old, which is the gap
-        until an event replaces this.
+        The token only creates a missing profile, with the visibility it carries.
+        It never rewrites a stored one: the token is up to 15 minutes old, and a
+        change that already arrived by event would be undone by it. From then on
+        the visibility is whatever the last event said (`apply_visibility`).
 
         The handle only ever gets filled in once, not kept in sync: a handle
         is fixed at registration and users-api refuses to change it, so a
-        stored one can never be out of date. Visibility is the opposite — it
-        can change at any time — so it is written back whenever the token
-        disagrees with what is stored, not only the first time.
+        stored one can never be out of date.
         """
         await self._session.execute(
             insert(UserProfileModel)
@@ -83,19 +92,41 @@ class FollowRepository:
             .on_conflict_do_nothing(index_elements=[UserProfileModel.id])
         )
         row = await self._session.get(UserProfileModel, account.id)
-        changed = False
         if row.handle is None and account.handle is not None:
             row.handle = account.handle
-            changed = True
-        if (
-            account.profile_visibility is not None
-            and row.visibility != account.profile_visibility.value
-        ):
-            row.visibility = account.profile_visibility.value
-            changed = True
-        if changed:
             await self._session.flush()
         return _to_profile(row)
+
+    async def apply_visibility(
+        self, user_id: uuid.UUID, visibility: ProfileVisibility, at: datetime
+    ) -> bool:
+        """Keep the visibility, and say whether this change was newer than the stored one.
+
+        An event older than the last one applied changes nothing, and neither
+        does the same one delivered twice. A closed account is left as it is:
+        it stays public so its replies are not hidden.
+
+        The profile is made when the account never reached this service, so an
+        event that arrives first is not lost. It has no handle, which the first
+        request of its owner fills in, and the visibility it carries is the real
+        one, not a default.
+        """
+        applied = await self._session.execute(
+            insert(UserProfileModel)
+            .values(id=user_id, visibility=visibility.value, visibility_changed_at=at)
+            .on_conflict_do_update(
+                index_elements=[UserProfileModel.id],
+                set_={"visibility": visibility.value, "visibility_changed_at": at},
+                where=and_(
+                    UserProfileModel.deleted_at.is_(None),
+                    or_(
+                        UserProfileModel.visibility_changed_at.is_(None),
+                        UserProfileModel.visibility_changed_at < at,
+                    ),
+                ),
+            )
+        )
+        return applied.rowcount > 0
 
     async def is_following(self, follower_id: uuid.UUID, followee_id: uuid.UUID) -> bool:
         row = await self._session.get(FollowModel, (follower_id, followee_id))

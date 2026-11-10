@@ -51,6 +51,9 @@ class PreferencesChanged:
     # A string and not a closed type: a value this version does not know is a
     # compatible change of the contract, and whoever handles it decides.
     feed_language: str
+    # Absent from the events published before the contract carried it: those do
+    # not say anything about the visibility.
+    profile_visibility: str | None
     # `time` of the envelope: when users-api saved the change.
     at: datetime
 
@@ -92,10 +95,14 @@ def parse_event(body: bytes) -> UserDeleted | PreferencesChanged | InvitationAcc
         if event_type == USER_DELETED:
             event = UserDeleted(event_id=event_id, user_id=uuid.UUID(str(data["user_id"])), at=at)
         elif event_type == PREFERENCES_CHANGED:
+            profile_visibility = data.get("profile_visibility")
             event = PreferencesChanged(
                 event_id=event_id,
                 user_id=uuid.UUID(str(data["user_id"])),
                 feed_language=str(data["feed_language"]),
+                profile_visibility=str(profile_visibility)
+                if profile_visibility is not None
+                else None,
                 at=at,
             )
         else:

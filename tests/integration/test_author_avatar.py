@@ -23,7 +23,7 @@ async def test_your_own_profile_shows_your_photo_and_cover_even_if_protected(
     owner = uuid.uuid4()
     await given_a_profile(owner, visibility="protected")
     users_api.has(owner, visibility="protected")
-    # The token carries the visibility, and every request writes it back.
+    # The token carries the same visibility the profile was stored with.
     as_owner = signed_in_as(owner, profile_visibility="protected")
     avatar = (await api.put("/users/me/avatar", files=image(PNG), headers=as_owner)).json()[
         "avatarUrl"

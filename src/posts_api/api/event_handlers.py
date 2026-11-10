@@ -38,6 +38,13 @@ FEED_LANGUAGES = frozenset({"es", "en", "all"})
 VISIBILITIES = frozenset(visibility.value for visibility in ProfileVisibility)
 
 
+def _known_visibility(value: str | None) -> ProfileVisibility | None:
+    try:
+        return ProfileVisibility(value) if value is not None else None
+    except ValueError:
+        return None
+
+
 def build_event_handler(
     session_factory: async_sessionmaker[AsyncSession],
     redis: Redis,
@@ -69,22 +76,43 @@ def build_event_handler(
     async def _apply_preferences(event: PreferencesChanged) -> Outcome:
         # Acked and not rejected: a new value is a compatible change of the
         # contract (ADR-017), and retrying would not make this version know it.
-        if event.feed_language not in FEED_LANGUAGES:
+        # Each value is judged on its own, so one this version does not know
+        # never keeps the other from being applied.
+        language = event.feed_language if event.feed_language in FEED_LANGUAGES else None
+        visibility = _known_visibility(event.profile_visibility)
+        if language is None:
             logger.warning(
                 "Event %s: ignored the unknown feed language %s",
                 event.event_id,
                 event.feed_language,
             )
-            return "ack"
+        if event.profile_visibility is not None and visibility is None:
+            logger.warning(
+                "Event %s: ignored the unknown profile visibility %s",
+                event.event_id,
+                event.profile_visibility,
+            )
+        # One transaction for both: the message is acked only when everything it
+        # said is stored, and a failure puts the whole of it back on the queue.
         async with session_factory() as session, session.begin():
-            applied = await FeedLanguageRepository(session).apply(
-                event.user_id, event.feed_language, event.at
+            language_applied = (
+                await FeedLanguageRepository(session).apply(event.user_id, language, event.at)
+                if language is not None
+                else False
+            )
+            visibility_applied = (
+                await FollowRepository(session).apply_visibility(
+                    event.user_id, visibility, event.at
+                )
+                if visibility is not None
+                else False
             )
         logger.info(
-            "Event %s: account %s feed language %s",
+            "Event %s: account %s feed language %s, profile visibility %s",
             event.event_id,
             event.user_id,
-            event.feed_language if applied else "not changed, a newer one was already applied",
+            event.feed_language if language_applied else "not changed",
+            event.profile_visibility if visibility_applied else "not changed",
         )
         return "ack"
 
@@ -114,11 +142,13 @@ def build_event_handler(
             # event land together or not at all.
             async with session_factory() as session, session.begin():
                 # The inviter may never have used this service, and a follow
-                # needs the account to exist. The event is fresher than the
-                # stored copy, which only learns a change of visibility from a
-                # token: writing it back keeps a protected account from being
-                # followed straight away.
-                await FollowRepository(session).ensure_profile(inviter)
+                # needs the account to exist. The event says the visibility at
+                # its `time`, so it is applied like a preferences event: it wins
+                # over an older stored copy and loses to a newer one, which keeps
+                # a protected account from being followed straight away.
+                follows = FollowRepository(session)
+                await follows.ensure_profile(inviter)
+                await follows.apply_visibility(inviter.id, inviter.profile_visibility, event.at)
                 await FollowService(
                     FollowRepository(session),
                     FollowRequestRepository(session),
