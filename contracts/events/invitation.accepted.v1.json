@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:udesa-x:eventos:invitation.accepted.v1",
+  "title": "invitation.accepted.v1",
+  "description": "Una cuenta que se registró con el link de invitación de otra verificó su email. Lo publica users-api; posts-api hace que la invitada siga a quien la invitó.",
+  "type": "object",
+  "required": ["specversion", "id", "source", "type", "time", "data"],
+  "additionalProperties": false,
+  "properties": {
+    "specversion": { "const": "1.0" },
+    "id": {
+      "description": "Identificador único del evento. El consumidor lo usa para descartar repetidos.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "source": { "const": "users-api" },
+    "type": { "const": "invitation.accepted.v1" },
+    "time": {
+      "description": "Instante en que la cuenta invitada verificó su email.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "invitee_id",
+        "invitee_handle",
+        "inviter_id",
+        "inviter_handle",
+        "inviter_visibility"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "invitee_id": {
+          "description": "Cuenta que se registró con el link: la que va a seguir.",
+          "type": "string",
+          "format": "uuid"
+        },
+        "invitee_handle": {
+          "description": "Handle de la cuenta invitada. posts-api lo necesita para crear su perfil si todavía no existe.",
+          "type": "string"
+        },
+        "inviter_id": {
+          "description": "Cuenta dueña del link: la que va a ser seguida.",
+          "type": "string",
+          "format": "uuid"
+        },
+        "inviter_handle": {
+          "description": "Handle de quien invitó. posts-api lo necesita para crear su perfil si todavía no existe.",
+          "type": "string"
+        },
+        "inviter_visibility": {
+          "description": "Visibilidad de quien invitó. Decide si el follow es directo o queda como solicitud pendiente.",
+          "type": "string",
+          "enum": ["public", "protected"]
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "specversion": "1.0",
+      "id": "0199f3d1-4b2c-7e5a-9c60-2d8f1a3b5c70",
+      "source": "users-api",
+      "type": "invitation.accepted.v1",
+      "time": "2026-11-08T18:42:10Z",
+      "data": {
+        "invitee_id": "3c9e5a71-8b24-4d6f-a1c0-7e2b9d4f6a15",
+        "invitee_handle": "@beto_dev",
+        "inviter_id": "7a1d3c9b-2e4f-4a6b-8d0c-1f3e5a7b9c2d",
+        "inviter_handle": "@ana_dev",
+        "inviter_visibility": "public"
+      }
+    }
+  ]
+}
