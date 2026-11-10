@@ -28,7 +28,7 @@ DELETED_AUTHOR_FIELDS = {"authorHandle": None, "authorDisplayName": None, "autho
 
 async def close_account(user_id: uuid.UUID, *, at: datetime | None = None) -> str:
     """What the consumer does with the event, without the broker in between."""
-    handler = build_event_handler(app.state.session_factory)
+    handler = build_event_handler(app.state.session_factory, app.state.redis)
     return await handler(body_of(user_deleted(user_id, at=at)))
 
 
@@ -254,7 +254,7 @@ async def test_an_account_the_service_never_saw_is_closed_before_it_shows_up(api
 async def test_an_event_that_cannot_be_read_is_rejected_and_changes_nothing(api):
     leaving = uuid.uuid4()
     await given_a_profile(leaving)
-    handler = build_event_handler(app.state.session_factory)
+    handler = build_event_handler(app.state.session_factory, app.state.redis)
 
     outcome = await handler(b'{"type": "user.deleted.v1"}')
 

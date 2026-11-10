@@ -245,6 +245,19 @@ El filtro está en la consulta y no depende de cuándo llegue el evento a una r�
 el manejador commitea, nada la muestra. Antes del evento, lo que sí es inmediato es que sus
 tokens mueren por ADR-014.
 
+## Invitaciones
+
+`users-api` publica `invitation.accepted.v1` cuando una cuenta registrada con el link de otra
+verifica su email. `posts-api` lo consume en la misma cola y hace que la invitada siga a quien la
+invitó, con la misma lógica de un follow normal (`FollowService.follow`): un perfil protegido
+recibe una solicitud en lugar de un follow, se actualizan los contadores y se publica
+`follow.created.v1`.
+
+El evento trae los handles de las dos cuentas y la visibilidad de quien invitó, porque este
+servicio crea los perfiles la primera vez que una cuenta aparece y puede no conocer a ninguna de
+las dos. Repetir el evento no cambia nada. Si el follow no se puede hacer (quien invitó bloqueó a
+la invitada o cerró la cuenta) el mensaje se confirma sin efecto: reintentar no lo arreglaría.
+
 ## Denuncias y bandeja del backoffice
 
 Una cuenta pasa a revisión cuando junta denuncias pendientes de 6 cuentas distintas: `posts-api` se

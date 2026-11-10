@@ -40,7 +40,7 @@ async def consuming(api, broker):
     channel, _ = broker
     # `gate`, when set, holds the handler until the test opens it.
     state = {"failures": 0, "calls": 0, "gate": None}
-    real = build_event_handler(app.state.session_factory)
+    real = build_event_handler(app.state.session_factory, app.state.redis)
 
     async def handle(body: bytes):
         state["calls"] += 1
@@ -178,7 +178,7 @@ async def test_stopping_waits_for_the_message_in_progress(api, broker):
     await given_a_profile(leaving)
     gate = asyncio.Event()
     handled = asyncio.Event()
-    real = build_event_handler(app.state.session_factory)
+    real = build_event_handler(app.state.session_factory, app.state.redis)
 
     async def handle(body: bytes):
         handled.set()

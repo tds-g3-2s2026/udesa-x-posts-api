@@ -32,7 +32,7 @@ async def announce(
     language: str = "all",
 ) -> str:
     """What the consumer does with the event, without the broker in between."""
-    handler = build_event_handler(app.state.session_factory)
+    handler = build_event_handler(app.state.session_factory, app.state.redis)
     return await handler(
         body_of(preferences_changed(user_id, language, visibility=visibility, at=at))
     )
@@ -104,7 +104,7 @@ async def test_an_older_event_arriving_late_does_not_undo_a_newer_one(api):
 
 async def test_the_same_event_delivered_twice_changes_nothing(api):
     ana = uuid.uuid4()
-    handler = build_event_handler(app.state.session_factory)
+    handler = build_event_handler(app.state.session_factory, app.state.redis)
     event = body_of(preferences_changed(ana, "all", visibility="protected"))
 
     assert await handler(event) == "ack"
@@ -141,7 +141,7 @@ async def test_a_token_cannot_undo_what_an_event_set(api):
 
 async def test_a_closed_account_stays_public(api):
     ana = uuid.uuid4()
-    handler = build_event_handler(app.state.session_factory)
+    handler = build_event_handler(app.state.session_factory, app.state.redis)
     await handler(body_of(user_deleted(ana)))
 
     await announce(ana, "protected", at=datetime.now(UTC) + timedelta(seconds=5))
@@ -166,7 +166,7 @@ async def test_a_failure_applying_the_visibility_leaves_the_language_unapplied(a
         raise RuntimeError("the database went away")
 
     monkeypatch.setattr(FollowRepository, "apply_visibility", failing)
-    handler = build_event_handler(app.state.session_factory)
+    handler = build_event_handler(app.state.session_factory, app.state.redis)
 
     with pytest.raises(RuntimeError):
         await handler(body_of(preferences_changed(ana, "es", visibility="protected")))
@@ -217,7 +217,7 @@ async def test_a_profile_made_by_an_event_is_still_shown_when_users_api_is_down(
 async def test_an_event_without_visibility_leaves_the_stored_one_alone(api):
     ana = uuid.uuid4()
     await given_a_profile(ana, visibility="protected")
-    handler = build_event_handler(app.state.session_factory)
+    handler = build_event_handler(app.state.session_factory, app.state.redis)
 
     assert await handler(body_of(preferences_changed(ana, "es"))) == "ack"
 
@@ -227,7 +227,7 @@ async def test_an_event_without_visibility_leaves_the_stored_one_alone(api):
 async def test_an_event_without_visibility_does_not_make_up_a_profile(api):
     """Following on a row made from it would let anybody follow a protected account unasked."""
     newcomer = uuid.uuid4()
-    handler = build_event_handler(app.state.session_factory)
+    handler = build_event_handler(app.state.session_factory, app.state.redis)
 
     await handler(body_of(preferences_changed(newcomer, "es")))
 
@@ -240,7 +240,7 @@ async def test_a_visibility_this_version_does_not_know_is_ignored_without_retryi
     event = preferences_changed(ana, "es", visibility="protected")
     event["data"]["profile_visibility"] = "friends"
 
-    outcome = await build_event_handler(app.state.session_factory)(body_of(event))
+    outcome = await build_event_handler(app.state.session_factory, app.state.redis)(body_of(event))
 
     assert outcome == "ack"
     assert (await profile_of(ana)).visibility == "protected"
@@ -252,7 +252,7 @@ async def test_a_language_this_version_does_not_know_does_not_keep_the_visibilit
     event = preferences_changed(ana, "es", visibility="protected")
     event["data"]["feed_language"] = "pt"
 
-    outcome = await build_event_handler(app.state.session_factory)(body_of(event))
+    outcome = await build_event_handler(app.state.session_factory, app.state.redis)(body_of(event))
 
     assert outcome == "ack"
     assert (await profile_of(ana)).visibility == "protected"

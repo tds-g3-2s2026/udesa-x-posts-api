@@ -12,6 +12,7 @@ from dataclasses import replace
 from datetime import datetime
 
 from posts_api.app.errors import ProblemError
+from posts_api.app.hashtags import MAX_HASHTAGS, extract_hashtags
 from posts_api.app.image_rules import (
     MAX_IMAGE_BYTES,
     MAX_IMAGES,
@@ -143,11 +144,23 @@ class PostService:
                 detail=f"El post no puede superar los {MAX_CONTENT_LENGTH} caracteres",
             )
 
+        # Counted after removing repeats: ten distinct hashtags is the limit, not ten mentions.
+        hashtags = extract_hashtags(sanitized)
+        if len(hashtags) > MAX_HASHTAGS:
+            raise ProblemError(
+                status=422,
+                code="too-many-hashtags",
+                title="No se pudo publicar el post",
+                detail=f"El post no puede tener más de {MAX_HASHTAGS} hashtags",
+            )
+
         formats = self._formats_of(images)
         language = self._languages.detect(sanitized)
 
         if parent_id is None:
-            post = await self._posts.create(author.id, sanitized, language=language)
+            post = await self._posts.create(
+                author.id, sanitized, language=language, hashtags=hashtags
+            )
             if not images:
                 return post
             return replace(post, images=await self._images.save(post.id, images, formats))
@@ -165,7 +178,7 @@ class PostService:
                 detail="Esta publicación fue eliminada.",
             )
         reply = await self._posts.create(
-            author.id, sanitized, language=language, parent_id=parent_id
+            author.id, sanitized, language=language, parent_id=parent_id, hashtags=hashtags
         )
         # Same transaction as the insert: either both land or neither does.
         await self._posts.count_reply(parent_id)

@@ -1,7 +1,7 @@
 """The instant of the last visibility event applied to each profile.
 
-Revision ID: 0015_visibilidad_vigente
-Revises: 0014_idioma_de_los_posts
+Revision ID: 0016_visibilidad_vigente
+Revises: 0015_hashtags
 Create Date: 2026-11-09
 """
 
@@ -10,8 +10,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0015_visibilidad_vigente"
-down_revision: str | None = "0014_idioma_de_los_posts"
+revision: str = "0016_visibilidad_vigente"
+down_revision: str | None = "0015_hashtags"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

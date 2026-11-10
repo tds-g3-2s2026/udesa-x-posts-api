@@ -6,18 +6,24 @@ same separation `follows` keeps between its repository and its storage model.
 """
 
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, null, select, update
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from posts_api.app.hashtags import hashtag_positions
 from posts_api.app.models.post import Post, PostWithAuthor
 from posts_api.app.pagination import DEFAULT_PAGE_SIZE, Cursor, apply_cursor, page_of
 from posts_api.app.repositories.likes import liked_by
 from posts_api.app.repositories.post_visibility import visible_to
 from posts_api.app.repositories.retweets import retweeted_by
-from posts_api.infrastructure.database.models import PostModel, UserProfileModel
+from posts_api.infrastructure.database.models import (
+    PostHashtagModel,
+    PostModel,
+    UserProfileModel,
+)
 
 
 def _to_post(row: PostModel) -> Post:
@@ -71,6 +77,7 @@ class PostRepository:
         *,
         language: str,
         parent_id: uuid.UUID | None = None,
+        hashtags: Sequence[str] = (),
     ) -> Post:
         row = PostModel(
             author_id=author_id, content=content, language=language, parent_id=parent_id
@@ -80,11 +87,23 @@ class PostRepository:
         # the response is built, without closing the transaction.
         await self._session.flush()
         await self._session.refresh(row)
+        self._session.add_all(PostHashtagModel(post_id=row.id, tag=tag) for tag in hashtags)
+        await self._session.flush()
         return _to_post(row)
 
     async def search(
-        self, query: str, viewer_id: uuid.UUID, *, cursor: Cursor | None
+        self,
+        query: str,
+        viewer_id: uuid.UUID,
+        *,
+        cursor: Cursor | None,
+        hashtag: str | None = None,
     ) -> tuple[list[tuple[PostWithAuthor, list[int]]], str | None]:
+        """Posts matching the text of `query`, or carrying `hashtag` when one is given.
+
+        A hashtag is looked up in `post_hashtags`, not in the text: it matches
+        the exact tag and not words that merely start with it.
+        """
         escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         positions = (
             func.generate_series(1, func.char_length(PostModel.content) - len(query) + 1)
@@ -104,11 +123,19 @@ class PostRepository:
             .correlate(PostModel)
             .scalar_subquery()
         )
+        if hashtag is None:
+            matches = PostModel.content.ilike(f"%{escaped}%", escape="\\")
+        else:
+            matches = PostModel.id.in_(
+                select(PostHashtagModel.post_id).where(PostHashtagModel.tag == hashtag)
+            )
         statement = (
-            select(PostModel, UserProfileModel.handle, match_positions)
+            select(
+                PostModel, UserProfileModel.handle, match_positions if hashtag is None else null()
+            )
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
             .where(
-                PostModel.content.ilike(f"%{escaped}%", escape="\\"),
+                matches,
                 PostModel.deleted_at.is_(None),
                 visible_to(
                     viewer_id,
@@ -124,7 +151,10 @@ class PostRepository:
             )
         )
         posts = [
-            (_to_post_with_author(post, handle, None, False, False), positions or [])
+            (
+                _to_post_with_author(post, handle, None, False, False),
+                hashtag_positions(post.content, hashtag) if hashtag else positions or [],
+            )
             for post, handle, positions in rows
         ]
         return page_of(
@@ -195,6 +225,10 @@ class PostRepository:
         return await self.find_visible(post_id, viewer_id=viewer_id, include_deleted=True)
 
     async def mark_deleted(self, post_id: uuid.UUID) -> None:
+        # A deleted post is no longer found by its hashtags.
+        await self._session.execute(
+            delete(PostHashtagModel).where(PostHashtagModel.post_id == post_id)
+        )
         await self._session.execute(
             update(PostModel)
             .where(PostModel.id == post_id, PostModel.deleted_at.is_(None))
