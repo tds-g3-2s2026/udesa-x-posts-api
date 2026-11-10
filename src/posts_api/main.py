@@ -78,7 +78,10 @@ async def lifespan(app: FastAPI):
     app.state.language_detector = LinguaLanguageDetector()
     # Tasks of their own: the service answers requests while the broker is down.
     # The consumer retries on its own, and the events to publish wait in the outbox.
-    consumer = EventConsumer(settings.rabbitmq_url, build_event_handler(app.state.session_factory))
+    consumer = EventConsumer(
+        settings.rabbitmq_url,
+        build_event_handler(app.state.session_factory, app.state.redis),
+    )
     consuming = asyncio.create_task(consumer.run())
     publisher = OutboxPublisher(
         session_factory=app.state.session_factory,

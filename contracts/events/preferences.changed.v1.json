@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:udesa-x:eventos:preferences.changed.v1",
   "title": "preferences.changed.v1",
-  "description": "Una cuenta cambió el idioma de su feed. Lo publica users-api; posts-api guarda una copia para filtrar el feed.",
+  "description": "Una cuenta cambió el idioma de su feed o la visibilidad de su perfil. Lo publica users-api; posts-api guarda una copia de cada valor: el idioma para filtrar el feed y la visibilidad para decidir quién lee sus posts. Lleva los valores vigentes de la cuenta, no solo el que cambió.",
   "type": "object",
   "required": ["specversion", "id", "source", "type", "time", "data"],
   "additionalProperties": false,
@@ -33,6 +33,11 @@
           "description": "El idioma elegido para el feed. `all` no filtra.",
           "type": "string",
           "enum": ["es", "en", "all"]
+        },
+        "profile_visibility": {
+          "description": "La visibilidad vigente del perfil. `protected` limita los posts a quienes la cuenta aprobó como seguidores. Opcional porque los eventos publicados antes de que existiera no lo llevan: sin este campo el consumidor no cambia su copia.",
+          "type": "string",
+          "enum": ["public", "protected"]
         }
       }
     }
@@ -46,7 +51,8 @@
       "time": "2026-11-05T15:20:00Z",
       "data": {
         "user_id": "7a1d3c9b-2e4f-4a6b-8d0c-1f3e5a7b9c2d",
-        "feed_language": "es"
+        "feed_language": "es",
+        "profile_visibility": "protected"
       }
     }
   ]
