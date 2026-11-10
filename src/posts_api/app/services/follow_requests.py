@@ -55,6 +55,11 @@ class FollowRequestService:
         """
         request = await self._required(owner, request_id)
         await self._requests.resolve(request_id, FollowRequestStatus.APPROVED)
+        # The requester may follow already: the account went public while the
+        # request was open and they followed directly. The relationship, the
+        # counters and the event exist, so closing the request is all that is left.
+        if await self._follows.is_following(request.requester_id, owner.id):
+            return
         await self._follows.add_follow(request.requester_id, owner.id)
         await self._follows.move_counters(request.requester_id, owner.id, by=1)
         # Also like a direct follow: an account the owner muted gets no notice.

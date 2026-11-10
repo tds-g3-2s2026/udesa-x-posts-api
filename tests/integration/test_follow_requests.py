@@ -1,12 +1,13 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from posts_api.app.pagination import DEFAULT_PAGE_SIZE
 from posts_api.infrastructure.database.models import (
     FollowModel,
     FollowRequestModel,
+    OutboxModel,
     UserProfileModel,
 )
 from posts_api.main import app
@@ -199,6 +200,11 @@ async def status_of(request_id: str) -> str:
         return (await session.get(FollowRequestModel, uuid.UUID(request_id))).status
 
 
+async def outbox_rows() -> int:
+    async with app.state.session_factory() as session:
+        return await session.scalar(select(func.count()).select_from(OutboxModel))
+
+
 async def test_approving_establishes_the_relationship_and_moves_the_counters(api):
     requester, target = uuid.uuid4(), uuid.uuid4()
     await given_a_profile(target, visibility="protected")
@@ -268,6 +274,34 @@ async def test_approving_twice_does_not_count_two_followers(api):
 
     assert again.status_code == 404
     assert await counters_of(target) == (1, 0)
+
+
+async def test_approving_a_request_from_someone_who_already_follows_closes_it_quietly(api):
+    """The account went public with a request open and the requester followed directly.
+
+    Approving must not insert the relationship a second time: the primary key
+    would reject it, the request would stay open forever and the owner would
+    get a 500 every time they tried.
+    """
+    requester, target = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(target, visibility="protected")
+    request_id = await a_request_from(api, requester, target)
+    async with app.state.session_factory() as session:
+        (await session.get(UserProfileModel, target)).visibility = "public"
+        await session.commit()
+    followed = await api.post(f"/users/{target}/follow", headers=signed_in_as(requester))
+    assert followed.status_code == 204
+    events_before = await outbox_rows()
+
+    response = await api.post(
+        f"/follow-requests/{request_id}/approve", headers=signed_in_as(target)
+    )
+
+    assert response.status_code == 204
+    assert await status_of(request_id) == "approved"
+    assert await counters_of(target) == (1, 0)
+    assert await counters_of(requester) == (0, 1)
+    assert await outbox_rows() == events_before
 
 
 async def test_a_rejected_request_cannot_be_approved_afterwards(api):
