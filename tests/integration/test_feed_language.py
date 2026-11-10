@@ -28,7 +28,7 @@ FRENCH = "Bonjour tout le monde, comment allez-vous aujourd'hui"
 
 async def choose(user_id: uuid.UUID, language: str, *, at: datetime | None = None) -> str:
     """What the consumer does with the event, without the broker in between."""
-    handler = build_event_handler(app.state.session_factory)
+    handler = build_event_handler(app.state.session_factory, app.state.redis)
     return await handler(body_of(preferences_changed(user_id, language, at=at)))
 
 
@@ -238,7 +238,7 @@ async def test_an_older_event_arriving_late_does_not_undo_a_newer_one(api):
 
 async def test_the_same_event_delivered_twice_changes_nothing(api):
     viewer = uuid.uuid4()
-    handler = build_event_handler(app.state.session_factory)
+    handler = build_event_handler(app.state.session_factory, app.state.redis)
     event = body_of(preferences_changed(viewer, "es"))
 
     assert await handler(event) == "ack"
@@ -253,7 +253,7 @@ async def test_a_language_this_version_does_not_know_is_ignored_without_retrying
     event = preferences_changed(viewer, "es")
     event["data"]["feed_language"] = "pt"
 
-    outcome = await build_event_handler(app.state.session_factory)(body_of(event))
+    outcome = await build_event_handler(app.state.session_factory, app.state.redis)(body_of(event))
 
     assert outcome == "ack"
     assert await chosen_by(viewer) == "es"

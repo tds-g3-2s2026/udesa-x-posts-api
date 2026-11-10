@@ -4,8 +4,13 @@ from datetime import UTC, datetime
 
 import pytest
 
-from posts_api.app.events import InvalidEventError, PreferencesChanged, parse_event
-from tests.events import CONTRACTS, body_of, preferences_changed, user_deleted
+from posts_api.app.events import (
+    InvalidEventError,
+    InvitationAccepted,
+    PreferencesChanged,
+    parse_event,
+)
+from tests.events import CONTRACTS, body_of, invitation_accepted, preferences_changed, user_deleted
 
 
 def test_the_example_of_the_contract_is_read():
@@ -80,6 +85,30 @@ def test_the_example_of_the_preferences_contract_is_read():
 def test_a_change_of_preferences_without_the_language_is_refused():
     event = preferences_changed(uuid.uuid4(), "es")
     event["data"].pop("feed_language")
+
+    with pytest.raises(InvalidEventError):
+        parse_event(body_of(event))
+
+
+def test_the_example_of_the_invitation_contract_is_read():
+    schema = json.loads((CONTRACTS / "invitation.accepted.v1.json").read_text(encoding="utf-8"))
+    example = schema["examples"][0]
+
+    event = parse_event(json.dumps(example).encode())
+
+    assert isinstance(event, InvitationAccepted)
+    assert str(event.invitee_id) == example["data"]["invitee_id"]
+    assert str(event.inviter_id) == example["data"]["inviter_id"]
+    assert event.inviter_visibility == "public"
+    assert event.at == datetime(2026, 11, 8, 18, 42, 10, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    "field", ["invitee_id", "invitee_handle", "inviter_id", "inviter_handle", "inviter_visibility"]
+)
+def test_an_invitation_missing_a_field_is_refused(field):
+    event = invitation_accepted(uuid.uuid4(), uuid.uuid4())
+    del event["data"][field]
 
     with pytest.raises(InvalidEventError):
         parse_event(body_of(event))

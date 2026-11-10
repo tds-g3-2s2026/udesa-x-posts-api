@@ -19,6 +19,7 @@ from typing import Any, Literal
 
 USER_DELETED = "user.deleted.v1"
 PREFERENCES_CHANGED = "preferences.changed.v1"
+INVITATION_ACCEPTED = "invitation.accepted.v1"
 
 SOURCE = "posts-api"
 SPEC_VERSION = "1.0"
@@ -54,7 +55,20 @@ class PreferencesChanged:
     at: datetime
 
 
-def parse_event(body: bytes) -> UserDeleted | PreferencesChanged:
+@dataclass(frozen=True)
+class InvitationAccepted:
+    event_id: uuid.UUID
+    invitee_id: uuid.UUID
+    invitee_handle: str
+    inviter_id: uuid.UUID
+    inviter_handle: str
+    # A string and not a closed type, for the same reason as `feed_language`.
+    inviter_visibility: str
+    # `time` of the envelope: when the invitee verified the address.
+    at: datetime
+
+
+def parse_event(body: bytes) -> UserDeleted | PreferencesChanged | InvitationAccepted:
     """The event in the message, or `InvalidEventError` if it is not one this service reads."""
     try:
         envelope = json.loads(body)
@@ -66,6 +80,7 @@ def parse_event(body: bytes) -> UserDeleted | PreferencesChanged:
     if envelope.get("specversion") != "1.0" or event_type not in (
         USER_DELETED,
         PREFERENCES_CHANGED,
+        INVITATION_ACCEPTED,
     ):
         raise InvalidEventError(f"Not an event this service reads: {event_type}")
     data = envelope.get("data")
@@ -73,18 +88,31 @@ def parse_event(body: bytes) -> UserDeleted | PreferencesChanged:
         raise InvalidEventError("The event has no data")
     try:
         event_id = uuid.UUID(str(envelope["id"]))
-        user_id = uuid.UUID(str(data["user_id"]))
         at = datetime.fromisoformat(str(envelope["time"]))
-        feed_language = str(data["feed_language"]) if event_type == PREFERENCES_CHANGED else None
+        if event_type == USER_DELETED:
+            event = UserDeleted(event_id=event_id, user_id=uuid.UUID(str(data["user_id"])), at=at)
+        elif event_type == PREFERENCES_CHANGED:
+            event = PreferencesChanged(
+                event_id=event_id,
+                user_id=uuid.UUID(str(data["user_id"])),
+                feed_language=str(data["feed_language"]),
+                at=at,
+            )
+        else:
+            event = InvitationAccepted(
+                event_id=event_id,
+                invitee_id=uuid.UUID(str(data["invitee_id"])),
+                invitee_handle=str(data["invitee_handle"]),
+                inviter_id=uuid.UUID(str(data["inviter_id"])),
+                inviter_handle=str(data["inviter_handle"]),
+                inviter_visibility=str(data["inviter_visibility"]),
+                at=at,
+            )
     except (KeyError, ValueError) as exc:
         raise InvalidEventError("The event is missing a field or it is malformed") from exc
     if at.tzinfo is None:
         raise InvalidEventError("The time of the event has no time zone")
-    if feed_language is None:
-        return UserDeleted(event_id=event_id, user_id=user_id, at=at)
-    return PreferencesChanged(
-        event_id=event_id, user_id=user_id, feed_language=feed_language, at=at
-    )
+    return event
 
 
 @dataclass(frozen=True)
