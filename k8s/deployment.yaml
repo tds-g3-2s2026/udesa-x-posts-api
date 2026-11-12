@@ -4,7 +4,7 @@ metadata:
   name: posts-api
   namespace: tds-group-3
 spec:
-  replicas: 1
+  # No replicas: k8s/hpa.yaml sets them, and a value here would reset them on every deploy.
   strategy:
     type: RollingUpdate
     rollingUpdate:
