@@ -1,6 +1,9 @@
 """The rules of the lists an account puts together (E3-H8).
 
-A list is private to its owner and only holds accounts the owner follows.
+A list is private to its owner and only holds accounts the owner follows. No
+code here takes an account out of the lists when the follow ends: each
+membership hangs from that follow and the database deletes it along with it
+(see `ListMemberModel`).
 """
 
 import uuid
@@ -83,8 +86,8 @@ class ListService:
                 title=title,
                 detail="La cuenta que querés sumar no existe",
             )
-        # Unfollowing someone takes them out of every list, so a list of
-        # accounts the owner does not follow would undo itself.
+        # The membership hangs from the owner's follow, so the database would
+        # refuse it anyway. Checked here to answer why instead of failing.
         if not await self._follows.is_following(owner.id, member_id):
             raise ProblemError(
                 status=409,
@@ -103,7 +106,7 @@ class ListService:
                 title=title,
                 detail=f"Una lista puede tener hasta {MAX_MEMBERS} cuentas",
             )
-        await self._lists.add_member(list_id, member_id)
+        await self._lists.add_member(list_id, owner.id, member_id)
 
     async def remove_member(self, owner: Account, list_id: uuid.UUID, member_id: uuid.UUID) -> None:
         """Take an account out of the list. Taking out one that was not there changes nothing."""

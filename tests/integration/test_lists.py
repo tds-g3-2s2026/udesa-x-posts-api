@@ -9,6 +9,7 @@ from posts_api.main import app
 from tests.conftest import requires_services
 from tests.integration.conftest import given_a_profile, handle_of, signed_in_as
 from tests.integration.test_mutes import follow, is_following
+from tests.integration.test_user_deleted import close_account
 
 pytestmark = requires_services
 
@@ -232,3 +233,50 @@ async def test_lists_need_a_session(api):
     response = await api.get("/lists")
 
     assert response.status_code == 401
+
+
+async def owner_with_a_member_in_two_lists(api) -> tuple[uuid.UUID, uuid.UUID, list[str]]:
+    owner, friend = uuid.uuid4(), uuid.uuid4()
+    await given_profiles(owner, friend)
+    await follow(api, owner, friend)
+    lists = [(await create_list(api, owner, name))["id"] for name in ("Taller", "Fútbol")]
+    for list_id in lists:
+        await add_member(api, owner, list_id, friend)
+    return owner, friend, lists
+
+
+async def test_e3_h8_ca3_unfollowing_removes_the_account_from_every_list(api):
+    owner, friend, lists = await owner_with_a_member_in_two_lists(api)
+
+    response = await api.delete(f"/users/{friend}/follow", headers=signed_in_as(owner))
+
+    assert response.status_code == 204
+    assert [await members_of(api, owner, list_id) for list_id in lists] == [[], []]
+
+
+async def test_e3_h8_ca3_blocking_removes_the_account_from_every_list(api):
+    owner, friend, lists = await owner_with_a_member_in_two_lists(api)
+
+    response = await api.post(f"/users/{friend}/block", headers=signed_in_as(owner))
+
+    assert response.status_code == 204
+    assert [await members_of(api, owner, list_id) for list_id in lists] == [[], []]
+
+
+async def test_being_blocked_by_a_member_takes_them_out_too(api):
+    # The block removes the follow in both directions, and the membership with it.
+    owner, friend, lists = await owner_with_a_member_in_two_lists(api)
+
+    response = await api.post(f"/users/{owner}/block", headers=signed_in_as(friend))
+
+    assert response.status_code == 204
+    assert [await members_of(api, owner, list_id) for list_id in lists] == [[], []]
+
+
+async def test_a_member_who_closes_the_account_leaves_every_list(api):
+    owner, friend, lists = await owner_with_a_member_in_two_lists(api)
+
+    await close_account(friend)
+
+    assert [await members_of(api, owner, list_id) for list_id in lists] == [[], []]
+    assert await lists_of(api, owner) == [("Taller", 0), ("Fútbol", 0)]

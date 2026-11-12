@@ -15,6 +15,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     SmallInteger,
@@ -214,6 +215,8 @@ class ListModel(Base):
 
     __tablename__ = "lists"
     __table_args__ = (
+        # What a membership points at, so it always belongs to the list's real owner.
+        UniqueConstraint("id", "owner_id", name="uq_lists_id_owner"),
         # The owner's lists, in the order they were made: the only way they are read.
         Index("ix_lists_owner", "owner_id", "created_at"),
     )
@@ -230,24 +233,38 @@ class ListModel(Base):
 
 
 class ListMemberModel(Base):
-    """An account inside a list. The same account can be in several lists."""
+    """An account inside a list. The same account can be in several lists.
+
+    It points at the owner's follow of the member, not just at the account: the
+    database refuses an account the owner does not follow, and unfollowing,
+    blocking or closing an account deletes the follow and, with it, every
+    membership that hung from it.
+    """
 
     __tablename__ = "list_members"
     __table_args__ = (
-        # Unfollowing or blocking someone takes them out of every list of the
-        # owner: that delete starts from the member.
-        Index("ix_list_members_member", "member_id"),
+        # CASCADE: deleting a list takes its members with it in the same statement.
+        ForeignKeyConstraint(
+            ["list_id", "owner_id"],
+            ["lists.id", "lists.owner_id"],
+            ondelete="CASCADE",
+            name="fk_list_members_list_owner",
+        ),
+        ForeignKeyConstraint(
+            ["owner_id", "member_id"],
+            ["follows.follower_id", "follows.followee_id"],
+            ondelete="CASCADE",
+            name="fk_list_members_follow",
+        ),
+        # Without it, every unfollow would scan the whole table looking for the
+        # memberships that hang from that follow.
+        Index("ix_list_members_owner_member", "owner_id", "member_id"),
     )
 
-    # CASCADE: deleting a list takes its members with it in the same statement.
-    list_id: Mapped[uuid.UUID] = mapped_column(
-        postgresql.UUID(as_uuid=True), ForeignKey("lists.id", ondelete="CASCADE"), primary_key=True
-    )
-    member_id: Mapped[uuid.UUID] = mapped_column(
-        postgresql.UUID(as_uuid=True),
-        ForeignKey("user_profiles.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
+    list_id: Mapped[uuid.UUID] = mapped_column(postgresql.UUID(as_uuid=True), primary_key=True)
+    member_id: Mapped[uuid.UUID] = mapped_column(postgresql.UUID(as_uuid=True), primary_key=True)
+    # The list's owner again, so the membership can point at the owner's follow.
+    owner_id: Mapped[uuid.UUID] = mapped_column(postgresql.UUID(as_uuid=True))
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
