@@ -64,7 +64,7 @@ responda 200 en `/healthcheck`: que compile no prueba que sirva.
 
 ## Kubernetes
 
-Los cuatro manifiestos de `k8s/` usan el namespace `tds-group-3`, según
+Los manifiestos de `k8s/` usan el namespace `tds-group-3`, según
 [ADR-008](https://github.com/tds-g3-2s2026/udesa-x-platform/blob/main/docs/adr/ADR-008-plataforma-de-despliegue.md).
 El Service es interno (`ClusterIP`) y escucha en el puerto `80` hacia el `targetPort` nombrado
 `http` (puerto `8000`), coincidiendo con el `containerPort`, el `EXPOSE` y el comando de
@@ -76,10 +76,19 @@ Las sondas de Kubernetes consultan el puerto nombrado `http`:
   sin tocar dependencias externas, evitando reinicios en cascada por caídas transitorias de BD o Redis.
 Ambos endpoints quedan fuera del prefijo `/api` y sin autenticación.
 
-Una réplica pide `100m` de CPU y `128Mi` de memoria, con límites `500m` y `512Mi`,
+Cada réplica pide `100m` de CPU y `128Mi` de memoria, con límites `500m` y `512Mi`,
 dentro del LimitRange de plataforma. El rollout usa `maxSurge: 1` y
 `maxUnavailable: 0` para mantener el pod anterior hasta que el nuevo esté listo,
 reservando un slot temporal en la cuota (no promete alta disponibilidad).
+
+`k8s/hpa.yaml` es un HorizontalPodAutoscaler: sube el Deployment de una hasta tres réplicas
+cuando el uso promedio de CPU pasa de `250m` por pod, la mitad del límite, y lo vuelve a bajar
+unos minutos después de que baja la carga. El objetivo es la mitad y no más porque una réplica
+nueva tarda en estar lista: carga los modelos de detección de idioma al arrancar. Por eso
+`k8s/deployment.yaml` no fija `replicas`: si lo hiciera, cada deploy volvería el servicio a una
+réplica. El máximo sale de la cuota del namespace, compartida con los rollouts (README de
+`udesa-x-platform`, "Autoescalado"). Las réplicas no se pisan entre sí: el outbox toma los eventos
+con `FOR UPDATE SKIP LOCKED` y el consumidor comparte la cola.
 
 Cada push a `main` que pasa el CI despliega solo, con el job `deploy` de
 `.github/workflows/ci.yml`, que llama a `deploy.yml` de `udesa-x-platform`. Ese pipeline
@@ -126,6 +135,7 @@ kubectl apply --dry-run=client \
   -f k8s/deployment.yaml \
   -f k8s/service.yaml \
   -f k8s/configmap.yaml \
+  -f k8s/hpa.yaml \
   -f k8s/secret.template.yaml
 ```
 

@@ -1,0 +1,24 @@
+# Scales posts-api by CPU between 1 and 3 pods. The maximum comes from the
+# namespace quota, shared with the extra pod of each rollout (udesa-x-platform
+# README, "Autoescalado"). The target is an average value and not a
+# percentage because the percentage is measured against the 100m request.
+# deployment.yaml leaves replicas unset so a deploy does not undo this count.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: posts-api
+  namespace: tds-group-3
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: posts-api
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: AverageValue
+          averageValue: 250m
