@@ -209,6 +209,48 @@ class MuteModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ListModel(Base):
+    """A list of accounts its owner put together. Only the owner sees it."""
+
+    __tablename__ = "lists"
+    __table_args__ = (
+        # The owner's lists, in the order they were made: the only way they are read.
+        Index("ix_lists_owner", "owner_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    # CASCADE: a list means nothing without its owner.
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("user_profiles.id", ondelete="CASCADE")
+    )
+    name: Mapped[str] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ListMemberModel(Base):
+    """An account inside a list. The same account can be in several lists."""
+
+    __tablename__ = "list_members"
+    __table_args__ = (
+        # Unfollowing or blocking someone takes them out of every list of the
+        # owner: that delete starts from the member.
+        Index("ix_list_members_member", "member_id"),
+    )
+
+    # CASCADE: deleting a list takes its members with it in the same statement.
+    list_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("lists.id", ondelete="CASCADE"), primary_key=True
+    )
+    member_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("user_profiles.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class PostModel(Base):
     __tablename__ = "posts"
     __table_args__ = (
