@@ -8,12 +8,13 @@ changes, it changes here and nowhere else.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import and_, delete, or_, select, update
+from sqlalchemy import and_, delete, not_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.app.models.follow import Account, ProfileVisibility, UserProfile
-from posts_api.infrastructure.database.models import FollowModel, UserProfileModel
+from posts_api.app.repositories.mutes import muted_by_viewer
+from posts_api.infrastructure.database.models import BlockModel, FollowModel, UserProfileModel
 
 
 def _to_profile(row: UserProfileModel) -> UserProfile:
@@ -150,10 +151,28 @@ class FollowRepository:
         """The most-followed accounts, for a "who to follow" empty state.
 
         Excludes the viewer and anyone they already follow: a suggestion that
-        would just show "Siguiendo" again is not a suggestion.
+        would just show "Siguiendo" again is not a suggestion. Also a block in
+        either direction, like every other read, and whoever the viewer muted.
+        All inside the statement, so the limit counts what is left after them.
         """
         already_followed = select(FollowModel.followee_id).where(
             FollowModel.follower_id == viewer_id
+        )
+        blocked_either_way = (
+            select(BlockModel.blocker_id)
+            .where(
+                or_(
+                    and_(
+                        BlockModel.blocker_id == viewer_id,
+                        BlockModel.blocked_id == UserProfileModel.id,
+                    ),
+                    and_(
+                        BlockModel.blocker_id == UserProfileModel.id,
+                        BlockModel.blocked_id == viewer_id,
+                    ),
+                )
+            )
+            .exists()
         )
         found = await self._session.execute(
             select(UserProfileModel)
@@ -161,6 +180,8 @@ class FollowRepository:
                 UserProfileModel.id != viewer_id,
                 UserProfileModel.id.not_in(already_followed),
                 UserProfileModel.deleted_at.is_(None),
+                not_(blocked_either_way),
+                not_(muted_by_viewer(viewer_id, UserProfileModel.id)),
             )
             .order_by(UserProfileModel.followers_count.desc(), UserProfileModel.id)
             .limit(limit)
