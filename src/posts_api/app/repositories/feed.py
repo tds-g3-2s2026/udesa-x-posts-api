@@ -1,8 +1,11 @@
-"""Read followed activity with a single order, visibility, mute and language check before paging."""
+"""Read followed activity with a single order, visibility, mute and language check before paging.
+
+The same reading serves a list's feed: only where the accounts come from changes.
+"""
 
 import uuid
 
-from sqlalchemy import String, literal, not_, select, tuple_, union_all
+from sqlalchemy import Select, String, literal, not_, select, tuple_, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -16,6 +19,7 @@ from posts_api.app.repositories.post_visibility import visible_to
 from posts_api.app.repositories.retweets import retweeted_by
 from posts_api.infrastructure.database.models import (
     FollowModel,
+    ListMemberModel,
     PostModel,
     RetweetModel,
     UserProfileModel,
@@ -33,6 +37,36 @@ class FeedRepository:
         cursor: FeedCursor | None = None,
         limit: int = DEFAULT_PAGE_SIZE,
     ) -> tuple[list[PostWithAuthor], str | None]:
+        """The posts and retweets of whoever the viewer follows."""
+        followed = select(FollowModel.followee_id.label("account_id")).where(
+            FollowModel.follower_id == viewer_id
+        )
+        return await self._activity_of(followed, viewer_id, cursor=cursor, limit=limit)
+
+    async def for_list(
+        self,
+        viewer_id: uuid.UUID,
+        list_id: uuid.UUID,
+        *,
+        cursor: FeedCursor | None = None,
+        limit: int = DEFAULT_PAGE_SIZE,
+    ) -> tuple[list[PostWithAuthor], str | None]:
+        """The posts and retweets of the accounts in a list (E3-H8)."""
+        members = select(ListMemberModel.member_id.label("account_id")).where(
+            ListMemberModel.list_id == list_id
+        )
+        return await self._activity_of(members, viewer_id, cursor=cursor, limit=limit)
+
+    async def _activity_of(
+        self,
+        accounts: Select,
+        viewer_id: uuid.UUID,
+        *,
+        cursor: FeedCursor | None,
+        limit: int,
+    ) -> tuple[list[PostWithAuthor], str | None]:
+        """What `accounts` posted and retweeted, as `viewer_id` is allowed to read it."""
+        sources = accounts.subquery()
         sharer = aliased(UserProfileModel)
         originals = (
             select(
@@ -42,8 +76,8 @@ class FeedRepository:
                 PostModel.author_id.label("actor_id"),
                 literal(None, type_=String).label("shared_by"),
             )
-            .join(FollowModel, FollowModel.followee_id == PostModel.author_id)
-            .where(FollowModel.follower_id == viewer_id, PostModel.parent_id.is_(None))
+            .join(sources, sources.c.account_id == PostModel.author_id)
+            .where(PostModel.parent_id.is_(None))
         )
         shares = (
             select(
@@ -53,10 +87,9 @@ class FeedRepository:
                 RetweetModel.user_id,
                 sharer.handle,
             )
-            .join(FollowModel, FollowModel.followee_id == RetweetModel.user_id)
+            .join(sources, sources.c.account_id == RetweetModel.user_id)
             .join(sharer, sharer.id == RetweetModel.user_id)
             .where(
-                FollowModel.follower_id == viewer_id,
                 visible_to(
                     viewer_id,
                     author_id=sharer.id,
