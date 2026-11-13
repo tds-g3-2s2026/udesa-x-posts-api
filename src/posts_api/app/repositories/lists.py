@@ -101,10 +101,12 @@ class ListRepository:
             .where(ListMemberModel.list_id == list_id)
         )
 
-    async def add_member(self, list_id: uuid.UUID, member_id: uuid.UUID) -> None:
+    async def add_member(
+        self, list_id: uuid.UUID, owner_id: uuid.UUID, member_id: uuid.UUID
+    ) -> None:
         await self._session.execute(
             insert(ListMemberModel)
-            .values(list_id=list_id, member_id=member_id)
+            .values(list_id=list_id, owner_id=owner_id, member_id=member_id)
             .on_conflict_do_nothing()
         )
 

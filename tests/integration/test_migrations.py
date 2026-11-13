@@ -24,6 +24,14 @@ async def _execute(statement: str) -> None:
     await engine.dispose()
 
 
+async def _fetch(statement: str) -> list[tuple]:
+    engine = create_async_engine(get_settings().database_url)
+    async with engine.connect() as connection:
+        rows = (await connection.execute(text(statement))).all()
+    await engine.dispose()
+    return [tuple(row) for row in rows]
+
+
 async def _tables() -> set[str]:
     engine = create_async_engine(get_settings().database_url)
     async with engine.connect() as connection:
@@ -90,4 +98,45 @@ def test_soft_delete_migration_preserves_existing_posts():
     )
     asyncio.run(
         _execute("DELETE FROM user_profiles WHERE id = '77777777-7777-4777-8777-777777777777'")
+    )
+
+
+def test_lists_from_0017_keep_the_members_their_owner_follows():
+    """0017 reached production before memberships hung from the follow. Each one
+    gets the list's owner, and one whose follow was already gone is dropped."""
+    owner = "88888888-8888-4888-8888-888888888881"
+    followed = "88888888-8888-4888-8888-888888888882"
+    unfollowed = "88888888-8888-4888-8888-888888888883"
+    list_id = "88888888-8888-4888-8888-888888888884"
+    config = Config("alembic.ini")
+    command.downgrade(config, "0017_listas")
+    for profile in (owner, followed, unfollowed):
+        asyncio.run(
+            _execute(
+                "INSERT INTO user_profiles (id, visibility, followers_count, following_count) "
+                f"VALUES ('{profile}', 'public', 0, 0)"
+            )
+        )
+    asyncio.run(
+        _execute(f"INSERT INTO follows (follower_id, followee_id) VALUES ('{owner}', '{followed}')")
+    )
+    asyncio.run(
+        _execute(
+            f"INSERT INTO lists (id, owner_id, name) VALUES ('{list_id}', '{owner}', 'Taller')"
+        )
+    )
+    for member in (followed, unfollowed):
+        asyncio.run(
+            _execute(
+                f"INSERT INTO list_members (list_id, member_id) VALUES ('{list_id}', '{member}')"
+            )
+        )
+
+    command.upgrade(config, "head")
+
+    rows = asyncio.run(_fetch("SELECT owner_id::text, member_id::text FROM list_members"))
+    assert rows == [(owner, followed)]
+    asyncio.run(_execute(f"DELETE FROM follows WHERE follower_id = '{owner}'"))
+    asyncio.run(
+        _execute(f"DELETE FROM user_profiles WHERE id IN ('{owner}', '{followed}', '{unfollowed}')")
     )
