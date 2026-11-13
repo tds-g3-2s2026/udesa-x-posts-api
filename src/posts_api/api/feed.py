@@ -1,3 +1,4 @@
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -6,13 +7,17 @@ from posts_api.api.deps import CurrentUserDep, PostImagesDep, SessionDep
 from posts_api.api.schemas.feed import FeedPostSummary
 from posts_api.api.schemas.pagination import CursorPage
 from posts_api.app.repositories.feed import FeedRepository
+from posts_api.app.repositories.lists import ListRepository
 from posts_api.app.services.feed import FeedService
 
 router = APIRouter(prefix="/feed", tags=["feed"])
+# The feed of a list hangs from the list, under /lists, but it is read the same
+# way as the feed, so it lives here (E3-H8).
+list_feed_router = APIRouter(prefix="/lists", tags=["lists"])
 
 
 def get_feed_service(session: SessionDep, images: PostImagesDep) -> FeedService:
-    return FeedService(FeedRepository(session), images)
+    return FeedService(FeedRepository(session), images, ListRepository(session))
 
 
 ServiceDep = Annotated[FeedService, Depends(get_feed_service)]
@@ -26,5 +31,18 @@ async def read_feed(
 ) -> CursorPage[FeedPostSummary]:
     """The posts of whoever the caller follows, newest first."""
     posts, next_cursor = await service.for_viewer(current_user, cursor=cursor)
+    items = [FeedPostSummary.of(one) for one in posts]
+    return CursorPage(items=items, next_cursor=next_cursor)
+
+
+@list_feed_router.get("/{list_id}/feed")
+async def read_list_feed(
+    list_id: uuid.UUID,
+    current_user: CurrentUserDep,
+    service: ServiceDep,
+    cursor: Annotated[str | None, Query()] = None,
+) -> CursorPage[FeedPostSummary]:
+    """What the accounts in one of the caller's lists posted and retweeted, newest first."""
+    posts, next_cursor = await service.for_list(current_user, list_id, cursor=cursor)
     items = [FeedPostSummary.of(one) for one in posts]
     return CursorPage(items=items, next_cursor=next_cursor)
