@@ -87,6 +87,17 @@ class PostImages:
                 attached.append(replace(post, images=await self._present(rows)))
         return attached
 
+    async def remove(self, post_id: uuid.UUID) -> bool:
+        """Take every image off the post and delete its files. False if it had none.
+
+        The rows go in the caller's transaction and the files right after, best
+        effort: a file that cannot be deleted stays in the bucket, but no post
+        points at it any more.
+        """
+        keys = await self._media.remove_for_post(post_id)
+        await self._discard(keys)
+        return bool(keys)
+
     async def _with_avatar(self, post: PostWithAuthor) -> PostWithAuthor:
         if post.author_avatar_key is None:
             return post

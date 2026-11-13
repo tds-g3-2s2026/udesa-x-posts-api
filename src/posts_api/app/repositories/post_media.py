@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.infrastructure.database.models import PostMediaModel
@@ -58,3 +58,12 @@ class PostMediaRepository:
                 StoredMedia(row.id, row.s3_key, row.position)
             )
         return by_post
+
+    async def remove_for_post(self, post_id: uuid.UUID) -> list[str]:
+        """Detach every image of the post and hand back their keys, to delete the files."""
+        removed = await self._session.scalars(
+            delete(PostMediaModel)
+            .where(PostMediaModel.post_id == post_id)
+            .returning(PostMediaModel.s3_key)
+        )
+        return list(removed)

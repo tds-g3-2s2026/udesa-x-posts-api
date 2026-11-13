@@ -16,6 +16,7 @@ from posts_api.api.deps import (
     AdministratorDirectoryDep,
     ClaimsDep,
     OutboxDep,
+    PostImagesDep,
     SessionDep,
     UsersApiDep,
 )
@@ -28,6 +29,7 @@ from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.posts import PostRepository
 from posts_api.app.repositories.reports import ReportRepository
 from posts_api.app.services.account_counts import AccountCountsService
+from posts_api.app.services.post_moderation import PostModerationService
 from posts_api.app.services.report_cases import ReportCaseService
 from posts_api.infrastructure.users_api.account_review import HttpAccountReview
 
@@ -55,6 +57,18 @@ def get_report_case_service(
 
 
 ReportCaseServiceDep = Annotated[ReportCaseService, Depends(get_report_case_service)]
+
+
+def get_post_moderation_service(
+    session: SessionDep,
+    images: PostImagesDep,
+    administrators: AdministratorDirectoryDep,
+    outbox: OutboxDep,
+) -> PostModerationService:
+    return PostModerationService(PostRepository(session), images, administrators, outbox)
+
+
+PostModerationServiceDep = Annotated[PostModerationService, Depends(get_post_moderation_service)]
 
 
 @router.get("/metrics")
@@ -109,3 +123,13 @@ async def resolve_case(
     Same answers as dismissing. A suspended account stays suspended.
     """
     await service.resolve(uuid.UUID(claims["sub"]), user_id)
+
+
+@router.post("/{post_id}/clean-content", status_code=status.HTTP_204_NO_CONTENT)
+async def clean_post_content(
+    post_id: uuid.UUID, _: AdministratorDep, claims: ClaimsDep, service: PostModerationServiceDep
+) -> None:
+    """Replace the text of the post with the moderation placeholder and take its images off
+    (E5-H10). Answers the same on a post already cleaned; `503` if users-api cannot say
+    who the administrator is, and then nothing changes."""
+    await service.clean(uuid.UUID(claims["sub"]), post_id)

@@ -191,3 +191,26 @@ def admin_action_recorded(
         },
         now=now,
     )
+
+
+def post_content_cleaned(
+    actor_id: uuid.UUID,
+    actor_email: str,
+    post_id: uuid.UUID,
+    author_id: uuid.UUID,
+    *,
+    now: datetime,
+) -> Event:
+    """An administrator replaced the text of a post with the placeholder (E5-H10)."""
+    return build_event(
+        ADMIN_ACTION_RECORDED,
+        {
+            "actor_id": str(actor_id),
+            "actor_email": actor_email,
+            "action": "post.content_cleaned",
+            "target_type": "post",
+            "target_id": str(post_id),
+            "details": {"author_id": str(author_id)},
+        },
+        now=now,
+    )
