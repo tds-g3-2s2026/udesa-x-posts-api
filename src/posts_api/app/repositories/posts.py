@@ -224,6 +224,27 @@ class PostRepository:
         )
         return await self.find_visible(post_id, viewer_id=viewer_id, include_deleted=True)
 
+    async def lock_for_moderation(self, post_id: uuid.UUID) -> Post | None:
+        """The post under a lock, whoever wrote it. None if it does not exist or was deleted.
+
+        No visibility check: an administrator reads every post (E5-H10).
+        """
+        row = await self._session.scalar(
+            select(PostModel)
+            .where(PostModel.id == post_id, PostModel.deleted_at.is_(None))
+            .with_for_update()
+        )
+        return _to_post(row) if row is not None else None
+
+    async def replace_content(self, post_id: uuid.UUID, content: str) -> None:
+        """The new text, without the hashtags of the old one: they would still find the post."""
+        await self._session.execute(
+            delete(PostHashtagModel).where(PostHashtagModel.post_id == post_id)
+        )
+        await self._session.execute(
+            update(PostModel).where(PostModel.id == post_id).values(content=content)
+        )
+
     async def mark_deleted(self, post_id: uuid.UUID) -> None:
         # A deleted post is no longer found by its hashtags.
         await self._session.execute(

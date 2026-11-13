@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:udesa-x:eventos:admin.action_recorded.v1",
   "title": "admin.action_recorded.v1",
-  "description": "Acción administrativa confirmada en posts-api. users-api conserva el registro histórico.",
+  "description": "Acción administrativa confirmada en posts-api: la decisión sobre las denuncias de una cuenta o la limpieza de un post. users-api conserva el registro histórico.",
   "type": "object",
   "required": [
     "specversion",
@@ -54,29 +54,75 @@
           "format": "email"
         },
         "action": {
+          "description": "report.* cierra las denuncias de una cuenta (E5-H7); post.content_cleaned reemplaza el texto de un post por el aviso de moderación (E5-H10).",
           "type": "string",
           "enum": [
             "report.dismissed",
-            "report.resolved"
+            "report.resolved",
+            "post.content_cleaned"
           ]
         },
         "target_type": {
-          "const": "user"
+          "description": "user para las denuncias, post para la limpieza.",
+          "enum": [
+            "user",
+            "post"
+          ]
         },
         "target_id": {
           "type": "string",
           "format": "uuid"
         },
         "details": {
-          "type": "object",
-          "required": [
-            "reports_count"
-          ],
-          "additionalProperties": false,
-          "properties": {
-            "reports_count": {
-              "type": "integer",
-              "minimum": 1
+          "description": "Lo que agrega cada acción: reports_count en report.*, author_id en post.content_cleaned.",
+          "type": "object"
+        }
+      },
+      "if": {
+        "properties": {
+          "action": {
+            "const": "post.content_cleaned"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "target_type": {
+            "const": "post"
+          },
+          "details": {
+            "type": "object",
+            "required": [
+              "author_id"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "author_id": {
+                "description": "Autor del post limpiado, para encontrar la cuenta aunque el post se borre después.",
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "target_type": {
+            "const": "user"
+          },
+          "details": {
+            "type": "object",
+            "required": [
+              "reports_count"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "reports_count": {
+                "description": "Denuncias que cerró la decisión.",
+                "type": "integer",
+                "minimum": 1
+              }
             }
           }
         }
@@ -98,6 +144,23 @@
         "target_id": "a17e9ab2-8d4a-4d76-81af-fb323d371bb0",
         "details": {
           "reports_count": 2
+        }
+      }
+    },
+    {
+      "specversion": "1.0",
+      "id": "019a1b2c-3d4e-7f50-8a61-7b8c9d0e1f20",
+      "source": "posts-api",
+      "type": "admin.action_recorded.v1",
+      "time": "2026-11-12T15:04:05Z",
+      "data": {
+        "actor_id": "7a1d3c9b-2e4f-4a6b-8d0c-1f3e5a7b9c2d",
+        "actor_email": "moderador@udesa.edu.ar",
+        "action": "post.content_cleaned",
+        "target_type": "post",
+        "target_id": "5b6c7d8e-9f01-4a2b-8c3d-4e5f60718293",
+        "details": {
+          "author_id": "a17e9ab2-8d4a-4d76-81af-fb323d371bb0"
         }
       }
     }
