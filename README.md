@@ -309,6 +309,13 @@ Cuando una cuenta empieza a seguir a otra, `posts-api` publica `follow.created.v
 solicitud aprobada por una cuenta protegida; una solicitud pendiente o rechazada no publica nada.
 `notifications-api` lo consume para mandar el push al seguido.
 
+Un like, un retweet o una respuesta publican `interaction.created.v1` (`kind` `like`, `retweet` o
+`reply`), para que `notifications-api` le avise al autor del post. `post_id` es siempre el post que
+recibió la interacción (en una respuesta, el respondido) y `reply_id` lleva la respuesta nueva. Sale
+solo cuando la interacción es nueva: un like o retweet repetido no publica otra vez. No sale si el
+autor del post es quien interactúa, ni si el autor silenció a esa cuenta: la interacción se guarda
+igual, sin aviso, como un follow de una cuenta silenciada.
+
 Se usa un outbox transaccional, igual que en `users-api`:
 
 1. El request escribe el evento en la tabla `outbox`, en la misma transacción que el follow y los

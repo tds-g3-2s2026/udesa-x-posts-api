@@ -3,14 +3,26 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
+from jsonschema import ValidationError
 
 from posts_api.app.events import (
+    INTERACTION_CREATED,
     InvalidEventError,
     InvitationAccepted,
     PreferencesChanged,
+    interaction_created,
     parse_event,
 )
-from tests.events import CONTRACTS, body_of, invitation_accepted, preferences_changed, user_deleted
+from tests.events import (
+    CONTRACTS,
+    body_of,
+    invitation_accepted,
+    preferences_changed,
+    user_deleted,
+)
+from tests.events import (
+    INTERACTION_CREATED as INTERACTION_CREATED_SCHEMA,
+)
 
 
 def test_the_example_of_the_contract_is_read():
@@ -120,3 +132,51 @@ def test_an_invitation_missing_a_field_is_refused(field):
 
     with pytest.raises(InvalidEventError):
         parse_event(body_of(event))
+
+
+@pytest.mark.parametrize("kind", ["like", "retweet"])
+def test_an_interaction_without_a_reply_carries_a_null_reply_id(kind):
+    actor, post, author = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    now = datetime(2026, 11, 8, 18, 42, 10, tzinfo=UTC)
+
+    event = interaction_created(kind, actor, post, author, actor_handle="@ana", now=now)
+
+    INTERACTION_CREATED_SCHEMA.validate(event.envelope)
+    assert event.type == INTERACTION_CREATED
+    assert event.envelope["source"] == "posts-api"
+    assert event.envelope["time"] == "2026-11-08T18:42:10.000Z"
+    assert event.envelope["data"] == {
+        "kind": kind,
+        "actor_id": str(actor),
+        "actor_handle": "@ana",
+        "post_id": str(post),
+        "post_author_id": str(author),
+        "reply_id": None,
+    }
+
+
+def test_a_reply_interaction_carries_the_reply_and_an_unknown_handle_is_null():
+    actor, post, author, reply = (uuid.uuid4() for _ in range(4))
+
+    event = interaction_created(
+        "reply", actor, post, author, actor_handle=None, reply_id=reply, now=datetime.now(UTC)
+    )
+
+    INTERACTION_CREATED_SCHEMA.validate(event.envelope)
+    assert event.envelope["data"]["actor_handle"] is None
+    assert event.envelope["data"]["post_id"] == str(post)
+    assert event.envelope["data"]["reply_id"] == str(reply)
+
+
+def test_a_reply_interaction_without_its_reply_breaks_the_schema():
+    event = interaction_created(
+        "reply",
+        uuid.uuid4(),
+        uuid.uuid4(),
+        uuid.uuid4(),
+        actor_handle=None,
+        now=datetime.now(UTC),
+    )
+
+    with pytest.raises(ValidationError):
+        INTERACTION_CREATED_SCHEMA.validate(event.envelope)

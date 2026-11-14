@@ -24,12 +24,15 @@ INVITATION_ACCEPTED = "invitation.accepted.v1"
 SOURCE = "posts-api"
 SPEC_VERSION = "1.0"
 FOLLOW_CREATED = "follow.created.v1"
+INTERACTION_CREATED = "interaction.created.v1"
 ADMIN_ACTION_RECORDED = "admin.action_recorded.v1"
 
 # What the handler tells the consumer to do with the message: take it off the
 # queue, or send it to the dead letter queue because retrying cannot fix it. A
 # failure that may pass (the database is down) is not an outcome: it is raised.
 Outcome = Literal["ack", "reject"]
+
+InteractionKind = Literal["like", "retweet", "reply"]
 
 
 class InvalidEventError(Exception):
@@ -165,6 +168,36 @@ def follow_created(
             "follower_id": str(follower_id),
             "follower_handle": follower_handle,
             "followee_id": str(followee_id),
+        },
+        now=now,
+    )
+
+
+def interaction_created(
+    kind: InteractionKind,
+    actor_id: uuid.UUID,
+    post_id: uuid.UUID,
+    post_author_id: uuid.UUID,
+    *,
+    actor_handle: str | None,
+    reply_id: uuid.UUID | None = None,
+    now: datetime,
+) -> Event:
+    """Someone liked, shared or answered a post: its author is who gets told.
+
+    `post_id` is always the post that received the interaction, never the reply
+    itself, so a notification opens the post the author wrote. `reply_id` is
+    set only for a reply, which the schema enforces.
+    """
+    return build_event(
+        INTERACTION_CREATED,
+        {
+            "kind": kind,
+            "actor_id": str(actor_id),
+            "actor_handle": actor_handle,
+            "post_id": str(post_id),
+            "post_author_id": str(post_author_id),
+            "reply_id": str(reply_id) if reply_id is not None else None,
         },
         now=now,
     )

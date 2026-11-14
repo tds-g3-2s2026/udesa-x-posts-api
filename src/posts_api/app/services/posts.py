@@ -29,9 +29,12 @@ from posts_api.app.pagination import Cursor
 from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.language_detector import LanguageDetector
 from posts_api.app.repositories.likes import LikeRepository
+from posts_api.app.repositories.mutes import MuteRepository
+from posts_api.app.repositories.outbox import OutboxRepository
 from posts_api.app.repositories.posts import PostRepository
 from posts_api.app.repositories.rate_limiter import RateLimiter
 from posts_api.app.repositories.retweets import RetweetRepository
+from posts_api.app.services.interactions import queue_interaction
 from posts_api.app.services.post_images import PostImages
 
 MAX_CONTENT_LENGTH = 280
@@ -81,6 +84,8 @@ class PostService:
         likes: LikeRepository,
         retweets: RetweetRepository,
         images: PostImages,
+        outbox: OutboxRepository,
+        mutes: MuteRepository,
         *,
         languages: LanguageDetector,
         post_limit: int,
@@ -89,6 +94,8 @@ class PostService:
         self._likes = likes
         self._retweets = retweets
         self._images = images
+        self._outbox = outbox
+        self._mutes = mutes
         self._languages = languages
         self._posts = posts
         self._follows = follows
@@ -121,7 +128,7 @@ class PostService:
         """
         if not charged:
             await self._charge_the_rate_limit(author.id)
-        await self._follows.ensure_profile(author)
+        profile = await self._follows.ensure_profile(author)
 
         # Measured after stripping tags, not before: the length limit caps the
         # text of the post, and markup an attacker stuffed in to inflate the
@@ -182,6 +189,18 @@ class PostService:
         )
         # Same transaction as the insert: either both land or neither does.
         await self._posts.count_reply(parent_id)
+        # The event names the post answered, not the reply, which travels as
+        # `reply_id`: the author opens their own post from the notification.
+        await queue_interaction(
+            self._outbox,
+            self._mutes,
+            "reply",
+            actor_id=author.id,
+            actor_handle=profile.handle,
+            post_id=parent_id,
+            post_author_id=parent.author_id,
+            reply_id=reply.id,
+        )
         return reply
 
     @staticmethod
