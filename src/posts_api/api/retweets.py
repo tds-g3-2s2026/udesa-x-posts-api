@@ -3,8 +3,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response
 
-from posts_api.api.deps import CurrentUserDep, SessionDep
+from posts_api.api.deps import CurrentUserDep, OutboxDep, SessionDep
 from posts_api.app.repositories.follows import FollowRepository
+from posts_api.app.repositories.mutes import MuteRepository
 from posts_api.app.repositories.posts import PostRepository
 from posts_api.app.repositories.retweets import RetweetRepository
 from posts_api.app.services.retweets import RetweetService
@@ -12,9 +13,13 @@ from posts_api.app.services.retweets import RetweetService
 router = APIRouter(prefix="/posts", tags=["retweets"])
 
 
-def get_retweet_service(session: SessionDep) -> RetweetService:
+def get_retweet_service(session: SessionDep, outbox: OutboxDep) -> RetweetService:
     return RetweetService(
-        RetweetRepository(session), PostRepository(session), FollowRepository(session)
+        RetweetRepository(session),
+        PostRepository(session),
+        FollowRepository(session),
+        outbox,
+        MuteRepository(session),
     )
 
 

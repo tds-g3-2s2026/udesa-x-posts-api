@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from posts_api.api.deps import (
     CurrentUserDep,
     LanguageDetectorDep,
+    OutboxDep,
     PostImagesDep,
     RedisDep,
     SessionDep,
@@ -19,6 +20,7 @@ from posts_api.api.schemas.pagination import CursorPage
 from posts_api.api.schemas.posts import CreatePostRequest, PostSummary
 from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.likes import LikeRepository
+from posts_api.app.repositories.mutes import MuteRepository
 from posts_api.app.repositories.posts import PostRepository
 from posts_api.app.repositories.retweets import RetweetRepository
 from posts_api.app.services.posts import PostService
@@ -33,8 +35,9 @@ def get_post_service(
     redis: RedisDep,
     images: PostImagesDep,
     languages: LanguageDetectorDep,
+    outbox: OutboxDep,
 ) -> PostService:
-    """Where the service gets its collaborators: PostgreSQL, Redis, images and languages."""
+    """Where the service gets its collaborators: PostgreSQL, Redis, images, languages, outbox."""
     settings = get_settings()
     return PostService(
         PostRepository(session),
@@ -43,6 +46,8 @@ def get_post_service(
         LikeRepository(session),
         RetweetRepository(session),
         images,
+        outbox,
+        MuteRepository(session),
         languages=languages,
         post_limit=settings.post_rate_limit,
         window_seconds=settings.post_rate_window_seconds,

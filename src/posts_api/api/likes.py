@@ -3,17 +3,24 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 
-from posts_api.api.deps import CurrentUserDep, SessionDep
+from posts_api.api.deps import CurrentUserDep, OutboxDep, SessionDep
 from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.likes import LikeRepository
+from posts_api.app.repositories.mutes import MuteRepository
 from posts_api.app.repositories.posts import PostRepository
 from posts_api.app.services.likes import LikeService
 
 router = APIRouter(prefix="/posts", tags=["likes"])
 
 
-def get_like_service(session: SessionDep) -> LikeService:
-    return LikeService(LikeRepository(session), PostRepository(session), FollowRepository(session))
+def get_like_service(session: SessionDep, outbox: OutboxDep) -> LikeService:
+    return LikeService(
+        LikeRepository(session),
+        PostRepository(session),
+        FollowRepository(session),
+        outbox,
+        MuteRepository(session),
+    )
 
 
 ServiceDep = Annotated[LikeService, Depends(get_like_service)]
