@@ -66,6 +66,19 @@ def _to_post_with_author(
     )
 
 
+def _moderation_read():
+    """A post and the author fields the backoffice shows, with no viewer behind it."""
+    return select(
+        PostModel, UserProfileModel.handle, UserProfileModel.deleted_at, UserProfileModel.avatar_key
+    ).join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
+
+
+def _read_for_moderation(
+    post: PostModel, handle: str | None, author_deleted_at: datetime | None, avatar_key: str | None
+) -> PostWithAuthor:
+    return _to_post_with_author(post, handle, author_deleted_at, False, False, avatar_key)
+
+
 class PostRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -223,6 +236,45 @@ class PostRepository:
             select(PostModel.id).where(PostModel.id == post_id).with_for_update()
         )
         return await self.find_visible(post_id, viewer_id=viewer_id, include_deleted=True)
+
+    async def find_for_moderation(self, post_id: uuid.UUID) -> PostWithAuthor | None:
+        """The post with its author, whoever wrote it. None if it does not exist or was deleted.
+
+        For an administrator (E5-H10): no visibility check, and nothing about a
+        viewer, so `likedByMe` and `retweetedByMe` are always false.
+        """
+        found = await self._session.execute(
+            _moderation_read().where(PostModel.id == post_id, PostModel.deleted_at.is_(None))
+        )
+        row = found.first()
+        return _read_for_moderation(*row) if row is not None else None
+
+    async def by_author_for_moderation(
+        self,
+        author_id: uuid.UUID,
+        *,
+        cursor: Cursor | None = None,
+        limit: int = DEFAULT_PAGE_SIZE,
+    ) -> tuple[list[PostWithAuthor], str | None]:
+        """What the account wrote, replies included, newest first, for an administrator.
+
+        Unlike the profile, retweets stay out: they are somebody else's posts,
+        and what can be cleaned from here is only what this account wrote.
+        """
+        statement = apply_cursor(
+            _moderation_read().where(
+                PostModel.author_id == author_id, PostModel.deleted_at.is_(None)
+            ),
+            order_by=PostModel.created_at,
+            tiebreak_by=PostModel.id,
+            cursor=cursor,
+            limit=limit,
+        )
+        found = await self._session.execute(statement)
+        posts = [_read_for_moderation(*row) for row in found.all()]
+        return page_of(
+            posts, limit=limit, at=lambda one: one.created_at, tiebreak=lambda one: one.id
+        )
 
     async def lock_for_moderation(self, post_id: uuid.UUID) -> Post | None:
         """The post under a lock, whoever wrote it. None if it does not exist or was deleted.

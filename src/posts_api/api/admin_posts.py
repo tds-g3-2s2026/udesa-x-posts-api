@@ -21,6 +21,7 @@ from posts_api.api.deps import (
     UsersApiDep,
 )
 from posts_api.api.posts import ServiceDep
+from posts_api.api.schemas.feed import FeedPostSummary
 from posts_api.api.schemas.pagination import CursorPage
 from posts_api.api.schemas.posts import AccountCountsSummary, PostMetrics
 from posts_api.api.schemas.reports import ReportCaseSummary
@@ -123,6 +124,33 @@ async def resolve_case(
     Same answers as dismissing. A suspended account stays suspended.
     """
     await service.resolve(uuid.UUID(claims["sub"]), user_id)
+
+
+@router.get("/accounts/{user_id}/posts")
+async def account_posts(
+    user_id: uuid.UUID,
+    _: AdministratorDep,
+    service: PostModerationServiceDep,
+    cursor: Annotated[str | None, Query()] = None,
+) -> CursorPage[FeedPostSummary]:
+    """What the account wrote, replies included, newest first, twenty per page (E5-H10).
+
+    Retweets stay out, and so does the visibility of the account: the
+    backoffice reads every post.
+    """
+    posts, next_cursor = await service.posts_of(user_id, cursor=cursor)
+    return CursorPage(items=[FeedPostSummary.of(one) for one in posts], next_cursor=next_cursor)
+
+
+@router.get("/{post_id}")
+async def post_detail(
+    post_id: uuid.UUID, _: AdministratorDep, service: PostModerationServiceDep
+) -> FeedPostSummary:
+    """One post with its author and images, the same shape `GET /posts/{id}` answers (E5-H10).
+
+    Declared after `/metrics`, so that path is never read as an id.
+    """
+    return FeedPostSummary.of(await service.post(post_id))
 
 
 @router.post("/{post_id}/clean-content", status_code=status.HTTP_204_NO_CONTENT)
