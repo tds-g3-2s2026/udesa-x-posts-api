@@ -23,7 +23,7 @@ from posts_api.app.image_rules import (
     image_too_large,
     too_many_images,
 )
-from posts_api.app.mentions import MAX_MENTIONS, extract_mentions
+from posts_api.app.mentions import MAX_MENTIONS, Mention, extract_mentions
 from posts_api.app.models.follow import Account
 from posts_api.app.models.post import Post, PostWithAuthor
 from posts_api.app.pagination import Cursor
@@ -36,7 +36,7 @@ from posts_api.app.repositories.outbox import OutboxRepository
 from posts_api.app.repositories.posts import PostRepository
 from posts_api.app.repositories.rate_limiter import RateLimiter
 from posts_api.app.repositories.retweets import RetweetRepository
-from posts_api.app.services.interactions import queue_interaction
+from posts_api.app.services.interactions import queue_interaction, queue_mention
 from posts_api.app.services.post_images import PostImages
 
 MAX_CONTENT_LENGTH = 280
@@ -184,6 +184,7 @@ class PostService:
             post = await self._posts.create(
                 author.id, sanitized, language=language, hashtags=hashtags, mentions=mentions
             )
+            await self._tell_the_mentioned(profile.handle, post, mentions)
             if not images:
                 return post
             return replace(post, images=await self._images.save(post.id, images, formats))
@@ -222,7 +223,38 @@ class PostService:
             post_author_id=parent.author_id,
             reply_id=reply.id,
         )
+        await self._tell_the_mentioned(profile.handle, reply, mentions)
         return reply
+
+    async def _tell_the_mentioned(
+        self, author_handle: str | None, post: Post, mentions: Sequence[Mention]
+    ) -> None:
+        """Write one `mention.created.v1` for each mentioned account that may be told.
+
+        The notification carries the text of the post, so an account that cannot read the
+        author's posts, by a block or by a protected profile it does not follow, is left out.
+        """
+        if not mentions:
+            return
+        readers = await self._posts.readers_among(post.author_id, [one.id for one in mentions])
+        recipients = [one for one in mentions if one.id in readers]
+        if not recipients:
+            return
+        # Every mention of the post belongs to the same thread.
+        root_id = (
+            post.id if post.parent_id is None else await self._posts.thread_root(post.parent_id)
+        )
+        for mention in recipients:
+            await queue_mention(
+                self._outbox,
+                self._mutes,
+                author_id=post.author_id,
+                author_handle=author_handle,
+                mentioned_id=mention.id,
+                post_id=post.id,
+                root_post_id=root_id,
+                content=post.content,
+            )
 
     @staticmethod
     def _formats_of(images: Sequence[IncomingImage]) -> list[ImageFormat]:
