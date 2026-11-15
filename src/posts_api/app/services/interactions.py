@@ -1,7 +1,7 @@
-"""Telling the author of a post that somebody liked, shared or answered it.
+"""Telling somebody that an account liked, shared, answered or mentioned them.
 
-One function for the three services, so the two reasons to stay quiet are
-written once: a copy per service would let them drift apart.
+The reasons to stay quiet are written once, here: a copy per service would let them
+drift apart.
 """
 
 import uuid
@@ -10,6 +10,18 @@ from datetime import UTC, datetime
 from posts_api.app import events
 from posts_api.app.repositories.mutes import MuteRepository
 from posts_api.app.repositories.outbox import OutboxRepository
+
+
+async def _is_not_news(
+    mutes: MuteRepository, *, actor_id: uuid.UUID, recipient_id: uuid.UUID
+) -> bool:
+    """Whether what `actor_id` did is not worth telling `recipient_id` about."""
+    # Answering, liking or naming yourself is not news to anyone.
+    if actor_id == recipient_id:
+        return True
+    # A muted account still acts, the recipient just does not get the notice:
+    # the same rule a follow from a muted account follows.
+    return await mutes.is_muted(recipient_id, actor_id)
 
 
 async def queue_interaction(
@@ -28,12 +40,7 @@ async def queue_interaction(
     The interaction itself is already saved by the caller either way: this only
     decides whether the author is told.
     """
-    # Answering or liking your own post is not news to anyone.
-    if actor_id == post_author_id:
-        return
-    # A muted account still interacts, the author just does not get the notice:
-    # the same rule a follow from a muted account follows.
-    if await mutes.is_muted(post_author_id, actor_id):
+    if await _is_not_news(mutes, actor_id=actor_id, recipient_id=post_author_id):
         return
     await outbox.add(
         events.interaction_created(
@@ -43,6 +50,38 @@ async def queue_interaction(
             post_author_id,
             actor_handle=actor_handle,
             reply_id=reply_id,
+            now=datetime.now(UTC),
+        )
+    )
+
+
+async def queue_mention(
+    outbox: OutboxRepository,
+    mutes: MuteRepository,
+    *,
+    author_id: uuid.UUID,
+    author_handle: str | None,
+    mentioned_id: uuid.UUID,
+    post_id: uuid.UUID,
+    root_post_id: uuid.UUID,
+    content: str,
+) -> None:
+    """Write `mention.created.v1` in the caller's transaction, unless nobody should hear of it.
+
+    The mention itself is already saved by the caller either way: this only decides
+    whether the mentioned account is told. Whether it can read the post at all is
+    for the caller to settle first, with the rule every read of posts shares.
+    """
+    if await _is_not_news(mutes, actor_id=author_id, recipient_id=mentioned_id):
+        return
+    await outbox.add(
+        events.mention_created(
+            author_id,
+            mentioned_id,
+            post_id,
+            root_post_id,
+            author_handle=author_handle,
+            content=content,
             now=datetime.now(UTC),
         )
     )
