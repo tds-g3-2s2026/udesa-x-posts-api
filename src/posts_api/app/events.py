@@ -25,6 +25,7 @@ SOURCE = "posts-api"
 SPEC_VERSION = "1.0"
 FOLLOW_CREATED = "follow.created.v1"
 INTERACTION_CREATED = "interaction.created.v1"
+MENTION_CREATED = "mention.created.v1"
 ADMIN_ACTION_RECORDED = "admin.action_recorded.v1"
 
 # What the handler tells the consumer to do with the message: take it off the
@@ -198,6 +199,36 @@ def interaction_created(
             "post_id": str(post_id),
             "post_author_id": str(post_author_id),
             "reply_id": str(reply_id) if reply_id is not None else None,
+        },
+        now=now,
+    )
+
+
+def mention_created(
+    author_id: uuid.UUID,
+    mentioned_id: uuid.UUID,
+    post_id: uuid.UUID,
+    root_post_id: uuid.UUID,
+    *,
+    author_handle: str | None,
+    content: str,
+    now: datetime,
+) -> Event:
+    """A post or reply names an account with `@handle`: that account is who gets told.
+
+    `post_id` is the post that contains the mention, the one a notification opens, and
+    `root_post_id` the top of its thread (the same post when it answers nothing). The
+    text travels whole: the consumer decides how much of it to show.
+    """
+    return build_event(
+        MENTION_CREATED,
+        {
+            "author_id": str(author_id),
+            "author_handle": author_handle,
+            "mentioned_id": str(mentioned_id),
+            "post_id": str(post_id),
+            "root_post_id": str(root_post_id),
+            "content": content,
         },
         now=now,
     )
