@@ -4,6 +4,7 @@ from sqlalchemy import func, select, update
 
 from posts_api.app.repositories.posts import PostRepository
 from posts_api.infrastructure.database.models import (
+    FollowModel,
     PostMentionModel,
     PostModel,
     UserProfileModel,
@@ -145,3 +146,99 @@ async def test_a_repeated_mention_counts_once(api):
     response = await publish(api, uuid.uuid4(), content)
 
     assert response.status_code == 201
+
+
+def listed(handle: str) -> str:
+    """The handle the way the app compares it: lower-case and without the `@`."""
+    return handle.removeprefix("@").lower()
+
+
+async def detail_of(api, reader: uuid.UUID, post_id: str) -> dict:
+    response = await api.get(f"/posts/{post_id}", headers=signed_in_as(reader))
+    assert response.status_code == 200
+    return response.json()
+
+
+async def test_e2_h9_ca1_a_post_returns_the_accounts_it_mentions(api):
+    author, ana, beto = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(ana)
+    await given_a_profile(beto)
+    post = (await publish(api, author, f"Con {handle_of(ana)} y {handle_of(beto)}")).json()["id"]
+
+    detail = await detail_of(api, author, post)
+
+    # Ordered by handle, which the test cannot know in advance: compare as a set.
+    assert {(one["id"], one["handle"]) for one in detail["mentions"]} == {
+        (str(ana), listed(handle_of(ana))),
+        (str(beto), listed(handle_of(beto))),
+    }
+    assert len(detail["mentions"]) == 2
+
+
+async def test_e2_h9_ca2_an_unknown_handle_is_not_a_mention(api):
+    author, ana = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(ana)
+    post = (await publish(api, author, f"{handle_of(ana)} y @nadie_aca")).json()["id"]
+    nobody = (await publish(api, author, "Hola @nadie_aca")).json()["id"]
+
+    assert (await detail_of(api, author, post))["mentions"] == [
+        {"id": str(ana), "handle": listed(handle_of(ana))}
+    ]
+    assert (await detail_of(api, author, nobody))["mentions"] == []
+
+
+async def test_the_feed_the_profile_and_the_replies_carry_the_mentions(api):
+    author, reader, ana = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    for account in (author, reader, ana):
+        await given_a_profile(account)
+    async with app.state.session_factory() as session:
+        session.add(FollowModel(follower_id=reader, followee_id=author))
+        await session.commit()
+    mention = {"id": str(ana), "handle": listed(handle_of(ana))}
+    post = (await publish(api, author, f"Hola {handle_of(ana)}")).json()["id"]
+    reply = await api.post(
+        f"/posts/{post}/replies",
+        json={"content": f"Otra vez {handle_of(ana)}"},
+        headers=signed_in_as(author),
+    )
+    assert reply.status_code == 201
+
+    feed = await api.get("/feed", headers=signed_in_as(reader))
+    profile = await api.get(f"/users/{author}/posts", headers=signed_in_as(reader))
+    replies = await api.get(f"/posts/{post}/replies", headers=signed_in_as(reader))
+
+    assert [one["mentions"] for one in feed.json()["items"]] == [[mention]]
+    assert [one["mentions"] for one in profile.json()["items"]] == [[mention]]
+    assert [one["mentions"] for one in replies.json()["items"]] == [[mention]]
+
+
+async def test_a_post_without_mentions_returns_an_empty_list(api):
+    author = uuid.uuid4()
+    post = (await publish(api, author, "Sin nadie")).json()["id"]
+
+    assert (await detail_of(api, author, post))["mentions"] == []
+
+
+async def test_an_account_closed_after_the_post_is_not_a_mention_any_more(api):
+    author, ana = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(ana)
+    post = (await publish(api, author, f"Hola {handle_of(ana)}")).json()["id"]
+    async with app.state.session_factory() as session:
+        await session.execute(
+            update(UserProfileModel).where(UserProfileModel.id == ana).values(deleted_at=func.now())
+        )
+        await session.commit()
+
+    assert (await detail_of(api, author, post))["mentions"] == []
+
+
+async def test_a_deleted_post_returns_no_mentions(api):
+    author, ana = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(ana)
+    post = (await publish(api, author, f"Hola {handle_of(ana)}")).json()["id"]
+    await api.delete(f"/posts/{post}", headers=signed_in_as(author))
+
+    detail = await detail_of(api, author, post)
+
+    assert detail["deleted"] is True
+    assert detail["mentions"] == []

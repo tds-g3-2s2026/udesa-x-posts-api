@@ -11,7 +11,17 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from posts_api.api.schemas.images import PostImageSummary
+from posts_api.app.mentions import Mention
 from posts_api.app.models.post import PostWithAuthor
+
+
+class MentionSummary(BaseModel):
+    id: uuid.UUID
+    handle: str
+
+    @classmethod
+    def of(cls, mention: Mention) -> "MentionSummary":
+        return cls(id=mention.id, handle=mention.handle)
 
 
 class FeedPostSummary(BaseModel):
@@ -46,6 +56,9 @@ class FeedPostSummary(BaseModel):
     # Ordered by position; empty for a post with no images and for a deleted one.
     # A retweet carries the images of the post it shares.
     images: list[PostImageSummary] = []
+    # The accounts the text mentions that exist, with the handle as the app compares it: without
+    # the `@`. A word with an `@` that is not here is plain text. Empty for a deleted post.
+    mentions: list[MentionSummary] = []
 
     @classmethod
     def of(cls, post: PostWithAuthor) -> "FeedPostSummary":
@@ -71,4 +84,5 @@ class FeedPostSummary(BaseModel):
             liked_by_me=post.liked_by_me,
             saved_by_me=post.saved_by_me,
             images=[PostImageSummary.of(one) for one in post.images],
+            mentions=[MentionSummary.of(one) for one in post.mentions],
         )

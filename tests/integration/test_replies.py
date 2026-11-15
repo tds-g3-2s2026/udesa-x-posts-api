@@ -299,6 +299,7 @@ async def test_a_reply_listed_carries_the_shape_of_a_feed_row(api):
         "entryId",
         "activityAt",
         "images",
+        "mentions",
     }
     assert row["authorHandle"] == handle_of(replier)
     assert row["parentId"] == original
