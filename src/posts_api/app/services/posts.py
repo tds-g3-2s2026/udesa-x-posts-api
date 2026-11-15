@@ -23,6 +23,7 @@ from posts_api.app.image_rules import (
     image_too_large,
     too_many_images,
 )
+from posts_api.app.mentions import MAX_MENTIONS, extract_mentions
 from posts_api.app.models.follow import Account
 from posts_api.app.models.post import Post, PostWithAuthor
 from posts_api.app.pagination import Cursor
@@ -164,12 +165,24 @@ class PostService:
                 detail=f"El post no puede tener más de {MAX_HASHTAGS} hashtags",
             )
 
+        # Counted before looking anyone up, and after removing repeats like the hashtags: the
+        # limit is on what the text says, not on how many of those accounts exist.
+        handles = extract_mentions(sanitized)
+        if len(handles) > MAX_MENTIONS:
+            raise ProblemError(
+                status=422,
+                code="too-many-mentions",
+                title="No se pudo publicar el post",
+                detail=f"El post no puede mencionar a más de {MAX_MENTIONS} cuentas",
+            )
+
         formats = self._formats_of(images)
         language = self._languages.detect(sanitized)
+        mentions = await self._posts.mentioned_accounts(handles)
 
         if parent_id is None:
             post = await self._posts.create(
-                author.id, sanitized, language=language, hashtags=hashtags
+                author.id, sanitized, language=language, hashtags=hashtags, mentions=mentions
             )
             if not images:
                 return post
@@ -188,7 +201,12 @@ class PostService:
                 detail="Esta publicación fue eliminada.",
             )
         reply = await self._posts.create(
-            author.id, sanitized, language=language, parent_id=parent_id, hashtags=hashtags
+            author.id,
+            sanitized,
+            language=language,
+            parent_id=parent_id,
+            hashtags=hashtags,
+            mentions=mentions,
         )
         # Same transaction as the insert: either both land or neither does.
         await self._posts.count_reply(parent_id)

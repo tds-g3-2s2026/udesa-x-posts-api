@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.app.hashtags import hashtag_positions
+from posts_api.app.mentions import Mention
 from posts_api.app.models.post import Post, PostWithAuthor
 from posts_api.app.pagination import DEFAULT_PAGE_SIZE, Cursor, apply_cursor, page_of
 from posts_api.app.repositories.bookmarks import saved_by
@@ -24,6 +25,7 @@ from posts_api.app.repositories.retweets import retweeted_by
 from posts_api.infrastructure.database.models import (
     BookmarkModel,
     PostHashtagModel,
+    PostMentionModel,
     PostModel,
     UserProfileModel,
 )
@@ -88,6 +90,28 @@ class PostRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    async def mentioned_accounts(self, handles: Sequence[str]) -> list[Mention]:
+        """The accounts behind these handles, in the order given. A handle nobody has is left out.
+
+        The handles come lower-cased and without the `@`. users-api stores them lower-cased,
+        with the `@`, so the lookup is by equality and uses the unique index. A closed
+        account does not count: its profile stays, but nobody can be mentioned there.
+        """
+        if not handles:
+            return []
+        found = await self._session.execute(
+            select(UserProfileModel.id, UserProfileModel.handle).where(
+                UserProfileModel.handle.in_([f"@{handle}" for handle in handles]),
+                UserProfileModel.deleted_at.is_(None),
+            )
+        )
+        by_handle = {handle.removeprefix("@"): account_id for account_id, handle in found}
+        return [
+            Mention(id=by_handle[handle], handle=handle)
+            for handle in handles
+            if handle in by_handle
+        ]
+
     async def create(
         self,
         author_id: uuid.UUID,
@@ -96,6 +120,7 @@ class PostRepository:
         language: str,
         parent_id: uuid.UUID | None = None,
         hashtags: Sequence[str] = (),
+        mentions: Sequence[Mention] = (),
     ) -> Post:
         row = PostModel(
             author_id=author_id, content=content, language=language, parent_id=parent_id
@@ -106,6 +131,9 @@ class PostRepository:
         await self._session.flush()
         await self._session.refresh(row)
         self._session.add_all(PostHashtagModel(post_id=row.id, tag=tag) for tag in hashtags)
+        self._session.add_all(
+            PostMentionModel(post_id=row.id, user_id=mention.id) for mention in mentions
+        )
         await self._session.flush()
         return _to_post(row)
 
@@ -297,18 +325,28 @@ class PostRepository:
         return _to_post(row) if row is not None else None
 
     async def replace_content(self, post_id: uuid.UUID, content: str) -> None:
-        """The new text, without the hashtags of the old one: they would still find the post."""
+        """The new text, without the hashtags and mentions of the old one.
+
+        The hashtags would still find the post, and the mentions would still link to accounts
+        the text no longer names.
+        """
         await self._session.execute(
             delete(PostHashtagModel).where(PostHashtagModel.post_id == post_id)
+        )
+        await self._session.execute(
+            delete(PostMentionModel).where(PostMentionModel.post_id == post_id)
         )
         await self._session.execute(
             update(PostModel).where(PostModel.id == post_id).values(content=content)
         )
 
     async def mark_deleted(self, post_id: uuid.UUID) -> None:
-        # A deleted post is no longer found by its hashtags.
+        # A deleted post is no longer found by its hashtags, and nobody is linked from it.
         await self._session.execute(
             delete(PostHashtagModel).where(PostHashtagModel.post_id == post_id)
+        )
+        await self._session.execute(
+            delete(PostMentionModel).where(PostMentionModel.post_id == post_id)
         )
         await self._session.execute(
             update(PostModel)
