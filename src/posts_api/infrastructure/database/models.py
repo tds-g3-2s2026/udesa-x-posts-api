@@ -340,6 +340,19 @@ class PostHashtagModel(Base):
     tag: Mapped[str] = mapped_column(String(280), primary_key=True)
 
 
+class PostMentionModel(Base):
+    """An account a post mentions with `@handle`: once per post, only accounts that exist."""
+
+    __tablename__ = "post_mentions"
+
+    post_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("posts.id"), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("user_profiles.id"), primary_key=True
+    )
+
+
 class ReportModel(Base):
     """One account reporting another, optionally from one of its posts."""
 
