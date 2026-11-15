@@ -2,7 +2,8 @@
 
 Both halves live together because both need the same pair of collaborators: the
 rows that say which files belong to which post, and the storage that holds them.
-The photo of each post's author is signed here too, in the same pass.
+The photo of each post's author is signed here too, in the same pass, and so are
+the accounts the post mentions: every post a screen reads goes through `attach`.
 """
 
 import uuid
@@ -18,6 +19,7 @@ from posts_api.app.repositories.image_storage import (
     signed_url_or_none,
 )
 from posts_api.app.repositories.post_media import NewMedia, PostMediaRepository, StoredMedia
+from posts_api.app.repositories.post_mentions import PostMentionRepository
 
 KEY_PREFIX = "posts"
 
@@ -32,9 +34,12 @@ def images_unavailable() -> ProblemError:
 
 
 class PostImages:
-    def __init__(self, media: PostMediaRepository, storage: ImageStorage) -> None:
+    def __init__(
+        self, media: PostMediaRepository, storage: ImageStorage, mentions: PostMentionRepository
+    ) -> None:
         self._media = media
         self._storage = storage
+        self._mentions = mentions
 
     async def save(
         self,
@@ -66,25 +71,33 @@ class PostImages:
             raise
 
     async def attach(self, posts: list[PostWithAuthor]) -> list[PostWithAuthor]:
-        """The same posts with their images and their author's photo, one query for the page.
+        """The same posts with their images, mentions and author's photo, in one pass over the page.
 
         A deleted post keeps its rows but shows none: the files stay where they
-        are, the post just no longer says it had them.
+        are, the post just no longer says it had them or who it mentioned.
         """
         posts = [await self._with_avatar(one) for one in posts]
         live = {one.id for one in posts if not one.deleted}
         if not live:
             return posts
         stored = await self._media.for_posts(live)
-        if not stored:
+        mentioned = await self._mentions.for_posts(live)
+        if not stored and not mentioned:
             return posts
         attached = []
         for post in posts:
             rows = stored.get(post.id)
-            if rows is None or post.deleted:
+            about = mentioned.get(post.id)
+            if post.deleted or (rows is None and about is None):
                 attached.append(post)
             else:
-                attached.append(replace(post, images=await self._present(rows)))
+                attached.append(
+                    replace(
+                        post,
+                        images=await self._present(rows) if rows else (),
+                        mentions=tuple(about or ()),
+                    )
+                )
         return attached
 
     async def remove(self, post_id: uuid.UUID) -> bool:
