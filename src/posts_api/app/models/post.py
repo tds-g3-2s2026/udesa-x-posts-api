@@ -62,6 +62,7 @@ class PostWithAuthor:
     # about the post, so it is filled in by the query that reads it.
     liked_by_me: bool = False
     retweeted_by_me: bool = False
+    saved_by_me: bool = False
     retweeted_by: str | None = None
     retweeter_id: uuid.UUID | None = None
     activity_at: datetime | None = None

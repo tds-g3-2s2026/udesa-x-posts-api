@@ -8,6 +8,7 @@ from sqlalchemy import delete
 
 from posts_api.infrastructure.database.models import (
     BlockModel,
+    BookmarkModel,
     FeedPreferenceModel,
     FollowModel,
     FollowRequestModel,
@@ -38,6 +39,7 @@ async def api():
             # First: a report points at the profiles and at the posts.
             await session.execute(delete(ReportModel))
             await session.execute(delete(LikeModel))
+            await session.execute(delete(BookmarkModel))
             await session.execute(delete(RetweetModel))
             await session.execute(delete(BlockModel))
             await session.execute(delete(MuteModel))

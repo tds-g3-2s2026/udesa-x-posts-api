@@ -26,6 +26,7 @@ from posts_api.app.image_rules import (
 from posts_api.app.models.follow import Account
 from posts_api.app.models.post import Post, PostWithAuthor
 from posts_api.app.pagination import Cursor
+from posts_api.app.repositories.bookmarks import BookmarkRepository
 from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.language_detector import LanguageDetector
 from posts_api.app.repositories.likes import LikeRepository
@@ -80,6 +81,7 @@ class PostService:
         rate_limiter: RateLimiter,
         likes: LikeRepository,
         retweets: RetweetRepository,
+        bookmarks: BookmarkRepository,
         images: PostImages,
         *,
         languages: LanguageDetector,
@@ -88,6 +90,7 @@ class PostService:
     ) -> None:
         self._likes = likes
         self._retweets = retweets
+        self._bookmarks = bookmarks
         self._images = images
         self._languages = languages
         self._posts = posts
@@ -214,6 +217,7 @@ class PostService:
             return
         await self._likes.remove_for_post(post_id)
         await self._retweets.remove_for_post(post_id)
+        await self._bookmarks.remove_for_post(post_id)
         await self._posts.mark_deleted(post_id)
 
     async def get(self, post_id: uuid.UUID, viewer: Account) -> PostWithAuthor:

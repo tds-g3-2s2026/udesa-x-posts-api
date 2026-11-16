@@ -7,6 +7,7 @@ same separation `follows` keeps between its repository and its storage model.
 
 import uuid
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import datetime
 
 from sqlalchemy import delete, func, null, select, update
@@ -16,10 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from posts_api.app.hashtags import hashtag_positions
 from posts_api.app.models.post import Post, PostWithAuthor
 from posts_api.app.pagination import DEFAULT_PAGE_SIZE, Cursor, apply_cursor, page_of
+from posts_api.app.repositories.bookmarks import saved_by
 from posts_api.app.repositories.likes import liked_by
 from posts_api.app.repositories.post_visibility import visible_to
 from posts_api.app.repositories.retweets import retweeted_by
 from posts_api.infrastructure.database.models import (
+    BookmarkModel,
     PostHashtagModel,
     PostModel,
     UserProfileModel,
@@ -45,6 +48,7 @@ def _to_post_with_author(
     author_deleted_at: datetime | None,
     liked: bool,
     retweeted: bool,
+    saved: bool,
     avatar_key: str | None = None,
 ) -> PostWithAuthor:
     return PostWithAuthor(
@@ -63,6 +67,7 @@ def _to_post_with_author(
         parent_id=post.parent_id,
         liked_by_me=liked and post.deleted_at is None,
         retweeted_by_me=retweeted and post.deleted_at is None,
+        saved_by_me=saved and post.deleted_at is None,
     )
 
 
@@ -76,7 +81,7 @@ def _moderation_read():
 def _read_for_moderation(
     post: PostModel, handle: str | None, author_deleted_at: datetime | None, avatar_key: str | None
 ) -> PostWithAuthor:
-    return _to_post_with_author(post, handle, author_deleted_at, False, False, avatar_key)
+    return _to_post_with_author(post, handle, author_deleted_at, False, False, False, avatar_key)
 
 
 class PostRepository:
@@ -165,7 +170,7 @@ class PostRepository:
         )
         posts = [
             (
-                _to_post_with_author(post, handle, None, False, False),
+                _to_post_with_author(post, handle, None, False, False, False),
                 hashtag_positions(post.content, hashtag) if hashtag else positions or [],
             )
             for post, handle, positions in rows
@@ -207,6 +212,7 @@ class PostRepository:
                 UserProfileModel.deleted_at,
                 liked_by(viewer_id),
                 retweeted_by(viewer_id),
+                saved_by(viewer_id),
                 UserProfileModel.avatar_key,
             )
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
@@ -225,8 +231,10 @@ class PostRepository:
         row = found.first()
         if row is None:
             return None
-        post, handle, author_deleted_at, liked, retweeted, avatar_key = row
-        return _to_post_with_author(post, handle, author_deleted_at, liked, retweeted, avatar_key)
+        post, handle, author_deleted_at, liked, retweeted, saved, avatar_key = row
+        return _to_post_with_author(
+            post, handle, author_deleted_at, liked, retweeted, saved, avatar_key
+        )
 
     async def lock_visible(
         self, post_id: uuid.UUID, *, viewer_id: uuid.UUID
@@ -241,7 +249,7 @@ class PostRepository:
         """The post with its author, whoever wrote it. None if it does not exist or was deleted.
 
         For an administrator (E5-H10): no visibility check, and nothing about a
-        viewer, so `likedByMe` and `retweetedByMe` are always false.
+        viewer, so `likedByMe`, `retweetedByMe` and `savedByMe` are always false.
         """
         found = await self._session.execute(
             _moderation_read().where(PostModel.id == post_id, PostModel.deleted_at.is_(None))
@@ -343,6 +351,7 @@ class PostRepository:
                 UserProfileModel.deleted_at,
                 liked_by(viewer_id),
                 retweeted_by(viewer_id),
+                saved_by(viewer_id),
                 UserProfileModel.avatar_key,
             )
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
@@ -368,9 +377,68 @@ class PostRepository:
         )
         found = await self._session.execute(statement)
         replies = [
-            _to_post_with_author(post, handle, author_deleted_at, liked, retweeted, avatar_key)
-            for post, handle, author_deleted_at, liked, retweeted, avatar_key in found.all()
+            _to_post_with_author(
+                post, handle, author_deleted_at, liked, retweeted, saved, avatar_key
+            )
+            for post, handle, author_deleted_at, liked, retweeted, saved, avatar_key in found.all()
         ]
         return page_of(
             replies, limit=limit, at=lambda one: one.created_at, tiebreak=lambda one: one.id
+        )
+
+    async def saved_by_viewer(
+        self,
+        viewer_id: uuid.UUID,
+        *,
+        cursor: Cursor | None = None,
+        limit: int = DEFAULT_PAGE_SIZE,
+    ) -> tuple[list[PostWithAuthor], str | None]:
+        """The posts the viewer saved, most recently saved first, one page at a time.
+
+        `activity_at` carries the instant the post was saved, which is what the
+        cursor walks by. A saved post that was deleted, or whose author the viewer
+        can no longer read, is left out here and comes back if that changes.
+        """
+        statement = apply_cursor(
+            select(
+                PostModel,
+                BookmarkModel.created_at,
+                UserProfileModel.handle,
+                UserProfileModel.deleted_at,
+                liked_by(viewer_id),
+                retweeted_by(viewer_id),
+                UserProfileModel.avatar_key,
+            )
+            .join(BookmarkModel, BookmarkModel.post_id == PostModel.id)
+            .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
+            .where(
+                BookmarkModel.user_id == viewer_id,
+                PostModel.deleted_at.is_(None),
+                visible_to(
+                    viewer_id,
+                    author_id=PostModel.author_id,
+                    author_visibility=UserProfileModel.visibility,
+                    author_deleted_at=UserProfileModel.deleted_at,
+                    keeps_deleted_author=PostModel.parent_id.is_not(None),
+                ),
+            ),
+            order_by=BookmarkModel.created_at,
+            tiebreak_by=BookmarkModel.post_id,
+            cursor=cursor,
+            limit=limit,
+        )
+        found = await self._session.execute(statement)
+        saved = [
+            replace(
+                _to_post_with_author(
+                    post, handle, author_deleted_at, liked, retweeted, True, avatar_key
+                ),
+                activity_at=saved_at,
+            )
+            for post, saved_at, handle, author_deleted_at, liked, retweeted, avatar_key in (
+                found.all()
+            )
+        ]
+        return page_of(
+            saved, limit=limit, at=lambda one: one.activity_at, tiebreak=lambda one: one.id
         )

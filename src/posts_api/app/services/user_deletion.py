@@ -23,5 +23,6 @@ class UserDeletionService:
         await self._deletions.release_blocks(user_id)
         await self._deletions.release_mutes(user_id)
         await self._deletions.release_likes(user_id)
+        await self._deletions.release_bookmarks(user_id)
         await self._deletions.release_retweets(user_id)
         return True

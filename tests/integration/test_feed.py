@@ -137,6 +137,7 @@ async def test_a_feed_item_carries_the_fields_the_screen_needs(api):
         "repliesCount",
         "parentId",
         "likedByMe",
+        "savedByMe",
         "retweetedByMe",
         "retweetedBy",
         "entryId",

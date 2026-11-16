@@ -423,6 +423,25 @@ class RetweetModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class BookmarkModel(Base):
+    """One account saving one post to its private list. The pair is the identity of the row."""
+
+    __tablename__ = "bookmarks"
+    __table_args__ = (
+        # The saved list is read newest first by its owner: the owner, then the
+        # cursor's order column and tiebreak.
+        Index("ix_bookmarks_user_created", "user_id", "created_at", "post_id"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("user_profiles.id"), primary_key=True
+    )
+    post_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("posts.id"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class PostMediaModel(Base):
     """One image attached to a post. The file itself lives in S3, under `s3_key`."""
 

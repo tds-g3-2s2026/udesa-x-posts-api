@@ -25,6 +25,7 @@ class PostSummary(BaseModel):
     # A post that was just written has no likes, so this is always `false` here;
     # it is on the shape so every post a client reads says the same things.
     liked_by_me: bool = Field(default=False, serialization_alias="likedByMe")
+    saved_by_me: bool = Field(default=False, serialization_alias="savedByMe")
     images: list[PostImageSummary] = []
 
     @classmethod

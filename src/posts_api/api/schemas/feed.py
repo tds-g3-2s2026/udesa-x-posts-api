@@ -37,6 +37,7 @@ class FeedPostSummary(BaseModel):
     # The post this one answers, `null` for one that answers nothing.
     parent_id: uuid.UUID | None = Field(default=None, serialization_alias="parentId")
     liked_by_me: bool = Field(default=False, serialization_alias="likedByMe")
+    saved_by_me: bool = Field(default=False, serialization_alias="savedByMe")
 
     retweeted_by_me: bool = Field(default=False, serialization_alias="retweetedByMe")
     retweeted_by: str | None = Field(default=None, serialization_alias="retweetedBy")
@@ -68,5 +69,6 @@ class FeedPostSummary(BaseModel):
             replies_count=post.replies_count,
             parent_id=post.parent_id,
             liked_by_me=post.liked_by_me,
+            saved_by_me=post.saved_by_me,
             images=[PostImageSummary.of(one) for one in post.images],
         )

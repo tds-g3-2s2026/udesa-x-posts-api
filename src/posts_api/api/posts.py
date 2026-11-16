@@ -17,6 +17,7 @@ from posts_api.api.multipart import is_multipart, read_post_form
 from posts_api.api.schemas.feed import FeedPostSummary
 from posts_api.api.schemas.pagination import CursorPage
 from posts_api.api.schemas.posts import CreatePostRequest, PostSummary
+from posts_api.app.repositories.bookmarks import BookmarkRepository
 from posts_api.app.repositories.follows import FollowRepository
 from posts_api.app.repositories.likes import LikeRepository
 from posts_api.app.repositories.posts import PostRepository
@@ -42,6 +43,7 @@ def get_post_service(
         RedisRateLimiter(redis),
         LikeRepository(session),
         RetweetRepository(session),
+        BookmarkRepository(session),
         images,
         languages=languages,
         post_limit=settings.post_rate_limit,
