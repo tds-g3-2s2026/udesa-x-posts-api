@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy import func, select
 
 from posts_api.app.models.follow import Account
+from posts_api.app.repositories.bookmarks import BookmarkRepository
 from posts_api.app.repositories.likes import LikeRepository
 from posts_api.app.repositories.posts import PostRepository
 from posts_api.app.repositories.retweets import RetweetRepository
@@ -162,6 +163,7 @@ async def test_deletion_rolls_back_relations_and_timestamp_together(api, monkeyp
             None,
             LikeRepository(session),
             RetweetRepository(session),
+            BookmarkRepository(session),
             None,
             languages=None,
             post_limit=100,
@@ -330,6 +332,7 @@ async def test_deletion_waits_for_an_accepted_report_and_preserves_it(api, monke
                 None,
                 LikeRepository(session),
                 RetweetRepository(session),
+                BookmarkRepository(session),
                 None,
                 languages=None,
                 post_limit=100,

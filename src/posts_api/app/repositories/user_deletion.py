@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from posts_api.infrastructure.database.models import (
     BlockModel,
+    BookmarkModel,
     FollowModel,
     FollowRequestModel,
     LikeModel,
@@ -102,6 +103,9 @@ class UserDeletionRepository:
             .values(likes_count=func.greatest(PostModel.likes_count - 1, 0))
         )
         await self._session.execute(delete(LikeModel).where(LikeModel.user_id == user_id))
+
+    async def release_bookmarks(self, user_id: uuid.UUID) -> None:
+        await self._session.execute(delete(BookmarkModel).where(BookmarkModel.user_id == user_id))
 
     async def release_retweets(self, user_id: uuid.UUID) -> None:
         taken = select(RetweetModel.post_id).where(RetweetModel.user_id == user_id)

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from posts_api.api.admin_posts import router as admin_posts_router
 from posts_api.api.blocks import router as blocks_router
+from posts_api.api.bookmarks import router as bookmarks_router
 from posts_api.api.errors import problem_error_handler, validation_error_handler
 from posts_api.api.event_handlers import build_event_handler
 from posts_api.api.feed import list_feed_router
@@ -139,6 +140,7 @@ app.include_router(profile_images_router, prefix=API_PREFIX)
 app.include_router(follow_requests_router, prefix=API_PREFIX)
 app.include_router(posts_router, prefix=API_PREFIX)
 app.include_router(likes_router, prefix=API_PREFIX)
+app.include_router(bookmarks_router, prefix=API_PREFIX)
 app.include_router(retweets_router, prefix=API_PREFIX)
 app.include_router(feed_router, prefix=API_PREFIX)
 app.include_router(list_feed_router, prefix=API_PREFIX)

@@ -16,6 +16,7 @@ from sqlalchemy.orm import aliased
 from posts_api.app.feed_pagination import FeedCursor
 from posts_api.app.models.post import PostWithAuthor
 from posts_api.app.pagination import DEFAULT_PAGE_SIZE
+from posts_api.app.repositories.bookmarks import saved_by
 from posts_api.app.repositories.likes import liked_by
 from posts_api.app.repositories.post_visibility import visible_to
 from posts_api.app.repositories.retweets import retweeted_by
@@ -88,6 +89,7 @@ class ProfilePostRepository:
                 activity.c.shared_by,
                 liked_by(viewer_id),
                 retweeted_by(viewer_id),
+                saved_by(viewer_id),
                 UserProfileModel.avatar_key,
             )
             .join(activity, activity.c.post_id == PostModel.id)
@@ -126,13 +128,26 @@ class ProfilePostRepository:
                 parent_id=post.parent_id,
                 liked_by_me=liked,
                 retweeted_by_me=retweeted,
+                saved_by_me=saved,
                 activity_at=at,
                 retweeted_by=shared_by,
                 retweeter_id=actor if kind else None,
                 # The author of the post, as in the feed: on a retweet, the original's.
                 author_avatar_key=None if closed_at else photo,
             )
-            for post, handle, closed_at, at, kind, actor, shared_by, liked, retweeted, photo in page
+            for (
+                post,
+                handle,
+                closed_at,
+                at,
+                kind,
+                actor,
+                shared_by,
+                liked,
+                retweeted,
+                saved,
+                photo,
+            ) in page
         ]
         next_cursor = None
         if len(rows) > limit:

@@ -140,3 +140,16 @@ def test_lists_from_0017_keep_the_members_their_owner_follows():
     asyncio.run(
         _execute(f"DELETE FROM user_profiles WHERE id IN ('{owner}', '{followed}', '{unfollowed}')")
     )
+
+
+def test_bookmarks_migration_creates_the_bookmarks_table_and_drops_it_on_downgrade():
+    config = Config("alembic.ini")
+    command.downgrade(config, "0018_listas_del_follow")
+    assert "bookmarks" not in asyncio.run(_tables())
+
+    command.upgrade(config, "0019_bookmarks")
+    assert "bookmarks" in asyncio.run(_tables())
+
+    command.downgrade(config, "0018_listas_del_follow")
+    assert "bookmarks" not in asyncio.run(_tables())
+    command.upgrade(config, "head")
