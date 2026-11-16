@@ -31,12 +31,15 @@ from posts_api.app.repositories.outbox import OutboxRepository
 from posts_api.app.repositories.post_media import PostMediaRepository
 from posts_api.app.repositories.profile_images import ProfileImageRepository
 from posts_api.app.repositories.revocations import RevocationStore
+from posts_api.app.repositories.trending import TrendingRepository
 from posts_api.app.security import decode_access_token
 from posts_api.app.services.post_images import PostImages
 from posts_api.app.services.profile_images import ProfileImages
+from posts_api.app.services.trending import TrendingService
 from posts_api.infrastructure.database.outbox_repository import SqlAlchemyOutboxRepository
 from posts_api.infrastructure.database.session import session_scope
 from posts_api.infrastructure.redis.revocations import RedisRevocationStore
+from posts_api.infrastructure.redis.trending_cache import RedisTrendingCache
 from posts_api.infrastructure.users_api.administrator_directory import HttpAdministratorDirectory
 
 logger = logging.getLogger(__name__)
@@ -121,6 +124,14 @@ def get_revocations(request: Request) -> RevocationStore:
 
 
 RevocationsDep = Annotated[RevocationStore, Depends(get_revocations)]
+
+
+def get_trending_service(session: SessionDep, redis: RedisDep) -> TrendingService:
+    """The ranking, read from PostgreSQL and kept in the Redis of the service."""
+    return TrendingService(RedisTrendingCache(redis), TrendingRepository(session))
+
+
+TrendingServiceDep = Annotated[TrendingService, Depends(get_trending_service)]
 
 # Rejects a missing or malformed Authorization header before anything else runs.
 bearer_scheme = HTTPBearer()

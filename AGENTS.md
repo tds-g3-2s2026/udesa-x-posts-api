@@ -18,8 +18,9 @@ E3-H1 a H10 y E3-H5.
 - Mensajería: RabbitMQ con `aio-pika` (ADR-019). Consume `user.deleted.v1` y
   `preferences.changed.v1` en la cola `posts-api` (`infrastructure/rabbitmq/`), con su DLQ
   `posts-api.dlq`
-- Cache y estado efímero: Redis `/1` (rate limit de follows y posts). Lee además, en solo
-  lectura, el Redis `/0` de `users-api` para las revocaciones de sesión (ADR-014)
+- Cache y estado efímero: Redis `/1` (rate limit de follows y posts, caché del ranking de
+  trending). Lee además, en solo lectura, el Redis `/0` de `users-api` para las revocaciones
+  de sesión (ADR-014)
 
 ## Checks y comandos
 
@@ -55,6 +56,9 @@ uv run pytest --cov=src --cov-report=term              # + tests/integration, re
 - La regla de visibilidad de posts (bloqueos y cuentas protegidas) está centralizada en
   `app/repositories/post_visibility.py` (`visible_to`). Cualquier consulta nueva que lea
   posts tiene que reusar esa función, nunca escribir su propio filtro.
+  Única excepción: el ranking de trending (`app/repositories/trending.py`) es el mismo para
+  todos y se cachea una sola vez, así que cuenta solo posts de cuentas públicas y vivas, sin
+  depender de quién mira.
 - `api/deps.py` arma las dependencias de cada request, pero no es el único lugar: algunas
   rutas (`api/follows.py`, `api/posts.py`, `api/reports.py`) importan implementaciones de
   `infrastructure/` directamente. Es la misma deuda del punto anterior.

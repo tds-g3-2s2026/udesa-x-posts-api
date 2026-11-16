@@ -34,6 +34,7 @@ from posts_api.api.profiles import router as profiles_router
 from posts_api.api.reports import router as reports_router
 from posts_api.api.retweets import router as retweets_router
 from posts_api.api.search import router as search_router
+from posts_api.api.trending import router as trending_router
 from posts_api.app.errors import ProblemError
 from posts_api.app.security import load_public_key
 from posts_api.config.settings import API_PREFIX, get_settings
@@ -148,4 +149,5 @@ app.include_router(blocks_router, prefix=API_PREFIX)
 app.include_router(mutes_router, prefix=API_PREFIX)
 app.include_router(lists_router, prefix=API_PREFIX)
 app.include_router(reports_router, prefix=API_PREFIX)
+app.include_router(trending_router, prefix=API_PREFIX)
 app.include_router(admin_posts_router, prefix=API_PREFIX)

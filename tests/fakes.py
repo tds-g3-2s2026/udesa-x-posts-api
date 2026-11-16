@@ -1,8 +1,11 @@
 """Stand-ins for the services the tests cannot reach."""
 
+from datetime import datetime
 from typing import BinaryIO
 
+from posts_api.app.models.trending import TrendingTopic
 from posts_api.app.repositories.image_storage import ImageStorage, ImageStorageError
+from posts_api.app.repositories.trending_cache import TrendingCache
 
 
 class FakeImageStorage(ImageStorage):
@@ -37,3 +40,37 @@ class FakeImageStorage(ImageStorage):
         if self.fail_on_url:
             raise ImageStorageError("simulated failure")
         return f"https://bucket.test/{key}?signature=fake"
+
+
+class FakeTrendingCache(TrendingCache):
+    """A cache in memory, which records the TTL it was given. `expire` drops the entry."""
+
+    def __init__(self) -> None:
+        self.topics: list[TrendingTopic] | None = None
+        self.ttl_seconds: int | None = None
+
+    async def get(self) -> list[TrendingTopic] | None:
+        return self.topics
+
+    async def set(self, topics: list[TrendingTopic], ttl_seconds: int) -> None:
+        self.topics = list(topics)
+        self.ttl_seconds = ttl_seconds
+
+    def expire(self) -> None:
+        self.topics = None
+
+
+class FakeTrendingRepository:
+    """Answers with a fixed ranking and remembers how it was asked."""
+
+    def __init__(self, topics: list[TrendingTopic]) -> None:
+        self.topics = topics
+        self.calls = 0
+        self.since: datetime | None = None
+        self.limit: int | None = None
+
+    async def top(self, *, since: datetime, limit: int) -> list[TrendingTopic]:
+        self.calls += 1
+        self.since = since
+        self.limit = limit
+        return self.topics[:limit]
