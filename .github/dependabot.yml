@@ -1,0 +1,11 @@
+# Keeps the pinned actions current: each one is fixed to a commit SHA with its
+# version in a comment, and Dependabot updates both in a single PR. Own reusable
+# workflows (tds-g3-2s2026/...@main) are branch refs and are left alone.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: chore
