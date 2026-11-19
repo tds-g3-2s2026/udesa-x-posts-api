@@ -17,6 +17,7 @@ from posts_api.infrastructure.database.models import (
     OutboxModel,
     PostHashtagModel,
     PostMediaModel,
+    PostMentionModel,
     PostModel,
     ReportModel,
     RetweetModel,
@@ -48,6 +49,7 @@ async def api():
             # The images hang from the posts.
             await session.execute(delete(PostMediaModel))
             await session.execute(delete(PostHashtagModel))
+            await session.execute(delete(PostMentionModel))
             # Before the profiles: both tables carry a foreign key to it.
             await session.execute(delete(PostModel))
             await session.execute(delete(UserProfileModel))
