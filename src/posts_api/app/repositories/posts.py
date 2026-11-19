@@ -13,6 +13,7 @@ from datetime import datetime
 from sqlalchemy import delete, func, null, select, update
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from posts_api.app.hashtags import hashtag_positions
 from posts_api.app.mentions import Mention
@@ -272,6 +273,48 @@ class PostRepository:
             select(PostModel.id).where(PostModel.id == post_id).with_for_update()
         )
         return await self.find_visible(post_id, viewer_id=viewer_id, include_deleted=True)
+
+    async def readers_among(
+        self, author_id: uuid.UUID, account_ids: Sequence[uuid.UUID]
+    ) -> set[uuid.UUID]:
+        """Which of these accounts may read the posts of `author_id`.
+
+        The rule is `visible_to`, the one every read of posts shares, with each account as
+        the viewer: a block in either direction, or a protected author the account does not
+        follow, leaves it out. For deciding who may be told what a post says.
+        """
+        author = aliased(UserProfileModel)
+        found = await self._session.scalars(
+            select(UserProfileModel.id)
+            .join(author, author.id == author_id)
+            .where(
+                UserProfileModel.id.in_(account_ids),
+                visible_to(
+                    UserProfileModel.id,
+                    author_id=author.id,
+                    author_visibility=author.visibility,
+                    author_deleted_at=author.deleted_at,
+                ),
+            )
+        )
+        return set(found)
+
+    async def thread_root(self, post_id: uuid.UUID) -> uuid.UUID:
+        """The post at the top of the thread `post_id` belongs to: itself when it answers nothing.
+
+        Walks up through `parent_id`, deleted posts included: they stay, so the thread is whole.
+        """
+        thread = (
+            select(PostModel.id, PostModel.parent_id)
+            .where(PostModel.id == post_id)
+            .cte("thread", recursive=True)
+        )
+        thread = thread.union_all(
+            select(PostModel.id, PostModel.parent_id).join(
+                thread, PostModel.id == thread.c.parent_id
+            )
+        )
+        return await self._session.scalar(select(thread.c.id).where(thread.c.parent_id.is_(None)))
 
     async def find_for_moderation(self, post_id: uuid.UUID) -> PostWithAuthor | None:
         """The post with its author, whoever wrote it. None if it does not exist or was deleted.

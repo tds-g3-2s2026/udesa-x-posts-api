@@ -171,6 +171,22 @@ cuenta está cerrada, y la app dibuja el avatar por defecto. Si una URL no se pu
 `null` en vez de fallar la página. Las listas de seguidores, seguidos y sugeridos siguen con
 `avatarUrl` en `null`.
 
+## Menciones
+
+Al publicar un post o una respuesta, el servicio busca en el texto las palabras con `@`. El handle
+tiene que cumplir las reglas de `users-api` (de 4 a 15 letras, números o guion bajo) y no puede ir
+pegado a otra palabra, así que `ana@udesa.edu.ar` no es una mención. Se comparan sin distinguir
+mayúsculas contra los perfiles locales, y las cuentas que existen quedan en `post_mentions`, una
+fila por post y cuenta. Un handle que nadie tiene, o que es de una cuenta cerrada, es texto común.
+Mencionarse a uno mismo se guarda igual. Más de 10 handles distintos en un mismo texto se rechazan
+con `422 too-many-mentions`, igual que los hashtags. Borrar el post, o limpiarlo desde el
+backoffice, quita sus menciones.
+
+Cada post que se lee (feed, feed de una lista, perfil, `GET /posts/{id}` y respuestas) trae
+`mentions`: una lista de `{id, handle}` con el handle en minúscula y sin `@`. La app linkea una
+palabra con `@` del texto solo si su handle está en esa lista. Sale vacía en un post eliminado, y
+una cuenta que se cierra después de escrito el post deja de aparecer.
+
 ## Idioma del feed
 
 Cada post guarda su idioma al publicarse (`posts.language`): `es`, `en` u `other`. Lo detecta
@@ -315,6 +331,19 @@ recibió la interacción (en una respuesta, el respondido) y `reply_id` lleva la
 solo cuando la interacción es nueva: un like o retweet repetido no publica otra vez. No sale si el
 autor del post es quien interactúa, ni si el autor silenció a esa cuenta: la interacción se guarda
 igual, sin aviso, como un follow de una cuenta silenciada.
+
+Una mención en un post o en una respuesta publica `mention.created.v1`, una vez por cada cuenta
+mencionada (`mentioned_id`), para que `notifications-api` se lo avise. Lleva el post que contiene
+la mención (`post_id`), la raíz de su hilo (`root_post_id`, el mismo post si no responde a nada) y
+el texto completo, y el consumidor decide cuánto mostrar. No sale si el autor se menciona a sí
+mismo, si la cuenta mencionada silenció al autor, ni si no puede leer sus posts: hay un bloqueo
+entre las dos, o el autor es una cuenta protegida que no la sigue. En esos casos la mención se
+guarda igual, sin aviso.
+
+El outbox publica con `mandatory`: un evento cuyo tipo no tiene cola ligada vuelve del broker y se
+queda en la tabla, y con 100 así ocupan el lote entero de cada pasada y frenan a los demás. Por eso
+`mention.created.v1` solo se despliega después de `notifications-api` con el consumidor de
+menciones.
 
 Se usa un outbox transaccional, igual que en `users-api`:
 

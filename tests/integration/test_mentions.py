@@ -1,5 +1,6 @@
 import uuid
 
+import pytest
 from sqlalchemy import func, select, update
 
 from posts_api.app.repositories.posts import PostRepository
@@ -11,7 +12,12 @@ from posts_api.infrastructure.database.models import (
 )
 from posts_api.main import app
 from tests.conftest import requires_services
+from tests.events import MENTION_CREATED
 from tests.integration.conftest import given_a_profile, handle_of, signed_in_as
+from tests.integration.test_likes import approve_follow, block
+from tests.integration.test_mutes import mute
+from tests.integration.test_outbox_follow import outbox_events
+from tests.integration.test_replies import reply
 
 pytestmark = requires_services
 
@@ -242,3 +248,117 @@ async def test_a_deleted_post_returns_no_mentions(api):
 
     assert detail["deleted"] is True
     assert detail["mentions"] == []
+
+
+async def mention_events() -> list[dict]:
+    return [event for event in await outbox_events() if event["type"] == "mention.created.v1"]
+
+
+async def test_e2_h9_ca3_a_mention_queues_mention_created(api):
+    author, ana = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(ana)
+    content = f"Hola {handle_of(ana)}, mirá esto"
+
+    response = await publish(api, author, content)
+
+    assert response.status_code == 201
+    [event] = await mention_events()
+    MENTION_CREATED.validate(event)
+    assert event["data"] == {
+        "author_id": str(author),
+        "author_handle": handle_of(author),
+        "mentioned_id": str(ana),
+        "post_id": response.json()["id"],
+        # A post that answers nothing is the top of its own thread.
+        "root_post_id": response.json()["id"],
+        "content": content,
+    }
+
+
+async def test_e4_h4_ca2_no_event_when_the_mentioned_user_muted_the_author(api):
+    author, ana = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(author)
+    await given_a_profile(ana)
+    await mute(api, ana, author)
+
+    response = await publish(api, author, f"Hola {handle_of(ana)}")
+
+    # The mention is still saved and still a link: only the notice is left out.
+    assert response.status_code == 201
+    assert await stored_mentions(response.json()["id"]) == [ana]
+    assert await mention_events() == []
+
+
+async def test_a_reply_carries_the_root_of_its_thread(api):
+    author, other, ana = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(ana)
+    root = (await publish(api, other, "Raíz del hilo")).json()["id"]
+    first = (await reply(api, other, root, "Primera respuesta")).json()["id"]
+
+    answered = await reply(api, author, first, f"Segunda respuesta para {handle_of(ana)}")
+
+    assert answered.status_code == 201
+    [event] = await mention_events()
+    assert event["data"]["post_id"] == answered.json()["id"]
+    assert event["data"]["root_post_id"] == root
+
+
+async def test_each_mentioned_account_gets_its_own_event(api):
+    author, ana, beto = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(ana)
+    await given_a_profile(beto)
+
+    await publish(api, author, f"{handle_of(ana)} {handle_of(beto)} {handle_of(ana)}")
+
+    events = await mention_events()
+    assert sorted(event["data"]["mentioned_id"] for event in events) == sorted(
+        [str(ana), str(beto)]
+    )
+
+
+async def test_mentioning_yourself_queues_nothing(api):
+    author = uuid.uuid4()
+
+    response = await publish(api, author, f"Soy {handle_of(author)}")
+
+    assert response.status_code == 201
+    assert await stored_mentions(response.json()["id"]) == [author]
+    assert await mention_events() == []
+
+
+async def test_a_handle_nobody_has_queues_nothing(api):
+    response = await publish(api, uuid.uuid4(), "Hola @nadie_aca")
+
+    assert response.status_code == 201
+    assert await mention_events() == []
+
+
+@pytest.mark.parametrize("blocker_is_the_mentioned", [True, False])
+async def test_a_block_between_the_two_queues_nothing(api, blocker_is_the_mentioned):
+    author, ana = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(author)
+    await given_a_profile(ana)
+    if blocker_is_the_mentioned:
+        await block(ana, author)
+    else:
+        await block(author, ana)
+
+    response = await publish(api, author, f"Hola {handle_of(ana)}")
+
+    assert response.status_code == 201
+    assert await stored_mentions(response.json()["id"]) == [ana]
+    assert await mention_events() == []
+
+
+async def test_a_protected_author_only_tells_whoever_follows_them(api):
+    author, follower, stranger = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(author, visibility="protected")
+    await given_a_profile(follower)
+    await given_a_profile(stranger)
+    await approve_follow(follower, author)
+
+    response = await publish(api, author, f"{handle_of(follower)} y {handle_of(stranger)}")
+
+    assert response.status_code == 201
+    [event] = await mention_events()
+    assert event["data"]["mentioned_id"] == str(follower)
