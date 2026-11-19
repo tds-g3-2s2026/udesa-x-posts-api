@@ -29,6 +29,7 @@ from posts_api.app.repositories.image_storage import ImageStorage
 from posts_api.app.repositories.language_detector import LanguageDetector
 from posts_api.app.repositories.outbox import OutboxRepository
 from posts_api.app.repositories.post_media import PostMediaRepository
+from posts_api.app.repositories.post_mentions import PostMentionRepository
 from posts_api.app.repositories.profile_images import ProfileImageRepository
 from posts_api.app.repositories.revocations import RevocationStore
 from posts_api.app.repositories.trending import TrendingRepository
@@ -95,7 +96,7 @@ LanguageDetectorDep = Annotated[LanguageDetector, Depends(get_language_detector)
 
 def get_post_images(session: SessionDep, storage: ImageStorageDep) -> PostImages:
     """What stores the images of a post and puts them back on the posts that are read."""
-    return PostImages(PostMediaRepository(session), storage)
+    return PostImages(PostMediaRepository(session), storage, PostMentionRepository(session))
 
 
 PostImagesDep = Annotated[PostImages, Depends(get_post_images)]
