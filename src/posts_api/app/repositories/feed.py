@@ -160,6 +160,8 @@ class FeedRepository:
                 retweets_count=post.retweets_count,
                 replies_count=post.replies_count,
                 parent_id=post.parent_id,
+                quotes_count=post.quotes_count,
+                quoted_post_id=post.quoted_post_id,
                 liked_by_me=liked,
                 retweeted_by_me=retweeted,
                 saved_by_me=saved,

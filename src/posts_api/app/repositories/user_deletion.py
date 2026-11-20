@@ -107,6 +107,29 @@ class UserDeletionRepository:
     async def release_bookmarks(self, user_id: uuid.UUID) -> None:
         await self._session.execute(delete(BookmarkModel).where(BookmarkModel.user_id == user_id))
 
+    async def release_quotes(self, user_id: uuid.UUID) -> None:
+        """Take the account's quotes off the counters of the posts they quote.
+
+        Its posts stay, but nobody reads them any more, and the counter shows the
+        quotes that can be read. Counted per post: one account can quote the same
+        post twice.
+        """
+        quoted = await self._session.execute(
+            select(PostModel.quoted_post_id, func.count())
+            .where(
+                PostModel.author_id == user_id,
+                PostModel.quoted_post_id.is_not(None),
+                PostModel.deleted_at.is_(None),
+            )
+            .group_by(PostModel.quoted_post_id)
+        )
+        for post_id, quotes in quoted.all():
+            await self._session.execute(
+                update(PostModel)
+                .where(PostModel.id == post_id)
+                .values(quotes_count=func.greatest(PostModel.quotes_count - quotes, 0))
+            )
+
     async def release_retweets(self, user_id: uuid.UUID) -> None:
         taken = select(RetweetModel.post_id).where(RetweetModel.user_id == user_id)
         await self._session.execute(
