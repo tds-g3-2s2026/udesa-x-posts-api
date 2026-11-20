@@ -42,6 +42,8 @@ def _to_post(row: PostModel) -> Post:
         retweets_count=row.retweets_count,
         replies_count=row.replies_count,
         parent_id=row.parent_id,
+        quotes_count=row.quotes_count,
+        quoted_post_id=row.quoted_post_id,
     )
 
 
@@ -68,6 +70,8 @@ def _to_post_with_author(
         retweets_count=0 if post.deleted_at else post.retweets_count,
         replies_count=post.replies_count,
         parent_id=post.parent_id,
+        quotes_count=post.quotes_count,
+        quoted_post_id=post.quoted_post_id,
         liked_by_me=liked and post.deleted_at is None,
         retweeted_by_me=retweeted and post.deleted_at is None,
         saved_by_me=saved and post.deleted_at is None,
@@ -120,11 +124,16 @@ class PostRepository:
         *,
         language: str,
         parent_id: uuid.UUID | None = None,
+        quoted_post_id: uuid.UUID | None = None,
         hashtags: Sequence[str] = (),
         mentions: Sequence[Mention] = (),
     ) -> Post:
         row = PostModel(
-            author_id=author_id, content=content, language=language, parent_id=parent_id
+            author_id=author_id,
+            content=content,
+            language=language,
+            parent_id=parent_id,
+            quoted_post_id=quoted_post_id,
         )
         self._session.add(row)
         # Flushed so the row gets its id and timestamp from PostgreSQL before
@@ -408,6 +417,17 @@ class PostRepository:
             update(PostModel)
             .where(PostModel.id == post_id)
             .values(replies_count=PostModel.replies_count + 1)
+        )
+
+    async def count_quote(self, post_id: uuid.UUID, change: int) -> None:
+        """Move the quotes counter of a post by one, up when quoted and down when a quote goes.
+
+        In SQL for the same reason as `count_reply`, and never below zero.
+        """
+        await self._session.execute(
+            update(PostModel)
+            .where(PostModel.id == post_id)
+            .values(quotes_count=func.greatest(PostModel.quotes_count + change, 0))
         )
 
     async def replies_to(

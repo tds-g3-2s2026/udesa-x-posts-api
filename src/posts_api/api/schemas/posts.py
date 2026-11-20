@@ -22,6 +22,9 @@ class PostSummary(BaseModel):
     retweets_count: int = Field(serialization_alias="retweetsCount")
     replies_count: int = Field(serialization_alias="repliesCount")
     parent_id: uuid.UUID | None = Field(default=None, serialization_alias="parentId")
+    quotes_count: int = Field(default=0, serialization_alias="quotesCount")
+    # The post this one quotes, `null` for one that quotes nothing.
+    quoted_post_id: uuid.UUID | None = Field(default=None, serialization_alias="quotedPostId")
     # A post that was just written has no likes, so this is always `false` here;
     # it is on the shape so every post a client reads says the same things.
     liked_by_me: bool = Field(default=False, serialization_alias="likedByMe")
@@ -39,6 +42,8 @@ class PostSummary(BaseModel):
             retweets_count=post.retweets_count,
             replies_count=post.replies_count,
             parent_id=post.parent_id,
+            quotes_count=post.quotes_count,
+            quoted_post_id=post.quoted_post_id,
             images=[PostImageSummary.of(one) for one in post.images],
         )
 

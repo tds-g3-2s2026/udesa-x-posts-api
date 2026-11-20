@@ -38,6 +38,8 @@ class Post:
     replies_count: int = 0
     parent_id: uuid.UUID | None = None
     images: tuple[PostImage, ...] = ()
+    quotes_count: int = 0
+    quoted_post_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,8 @@ class PostWithAuthor:
     replies_count: int
     deleted: bool = False
     parent_id: uuid.UUID | None = None
+    quotes_count: int = 0
+    quoted_post_id: uuid.UUID | None = None
     # Whether whoever is reading already liked it: a fact about the reader, not
     # about the post, so it is filled in by the query that reads it.
     liked_by_me: bool = False
