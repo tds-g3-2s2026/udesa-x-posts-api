@@ -46,6 +46,11 @@ class FeedPostSummary(BaseModel):
     replies_count: int = Field(serialization_alias="repliesCount")
     # The post this one answers, `null` for one that answers nothing.
     parent_id: uuid.UUID | None = Field(default=None, serialization_alias="parentId")
+    quotes_count: int = Field(default=0, serialization_alias="quotesCount")
+    # The post this one quotes, `null` for one that quotes nothing. Only the id:
+    # the app reads it with `GET /posts/{id}`, which already applies the
+    # visibility rule and says whether it was deleted.
+    quoted_post_id: uuid.UUID | None = Field(default=None, serialization_alias="quotedPostId")
     liked_by_me: bool = Field(default=False, serialization_alias="likedByMe")
     saved_by_me: bool = Field(default=False, serialization_alias="savedByMe")
 
@@ -81,6 +86,8 @@ class FeedPostSummary(BaseModel):
             retweets_count=post.retweets_count,
             replies_count=post.replies_count,
             parent_id=post.parent_id,
+            quotes_count=post.quotes_count,
+            quoted_post_id=post.quoted_post_id,
             liked_by_me=post.liked_by_me,
             saved_by_me=post.saved_by_me,
             images=[PostImageSummary.of(one) for one in post.images],
