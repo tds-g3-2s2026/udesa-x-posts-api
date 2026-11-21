@@ -128,6 +128,18 @@ async def create_reply(
     return PostSummary.of(reply)
 
 
+@router.post("/{post_id}/quotes", status_code=status.HTTP_201_CREATED)
+async def create_quote(
+    post_id: uuid.UUID,
+    body: CreatePostRequest,
+    current_user: CurrentUserDep,
+    service: ServiceDep,
+) -> PostSummary:
+    """Quote a post with a comment. Same body, same checks and same limit as publishing one."""
+    quote = await service.create(current_user, body.content, quoted_post_id=post_id)
+    return PostSummary.of(quote)
+
+
 @router.get("/{post_id}/replies")
 async def list_replies(
     post_id: uuid.UUID,

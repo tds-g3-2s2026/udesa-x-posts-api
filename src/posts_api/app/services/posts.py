@@ -121,14 +121,15 @@ class PostService:
         content: str,
         *,
         parent_id: uuid.UUID | None = None,
+        quoted_post_id: uuid.UUID | None = None,
         images: Sequence[IncomingImage] = (),
         charged: bool = False,
     ) -> Post:
         """Publish a post, or refuse it and say exactly which rule stopped it.
 
-        A reply goes through the same checks as any post, and through the same
-        rate limit counter: answering is publishing, and a second counter would
-        let somebody double their quota by alternating the two.
+        A reply and a quote go through the same checks as any post, and through
+        the same rate limit counter: answering and quoting are publishing, and a
+        second counter would let somebody double their quota by alternating them.
         """
         if not charged:
             await self._charge_the_rate_limit(author.id)
@@ -180,6 +181,11 @@ class PostService:
         language = self._languages.detect(sanitized)
         mentions = await self._posts.mentioned_accounts(handles)
 
+        if quoted_post_id is not None:
+            return await self._quote(
+                author, profile.handle, quoted_post_id, sanitized, language, hashtags, mentions
+            )
+
         if parent_id is None:
             post = await self._posts.create(
                 author.id, sanitized, language=language, hashtags=hashtags, mentions=mentions
@@ -225,6 +231,44 @@ class PostService:
         )
         await self._tell_the_mentioned(profile.handle, reply, mentions)
         return reply
+
+    async def _quote(
+        self,
+        author: Account,
+        author_handle: str | None,
+        quoted_post_id: uuid.UUID,
+        comment: str,
+        language: str,
+        hashtags: Sequence[str],
+        mentions: Sequence[Mention],
+    ) -> Post:
+        """A post with the author's comment that carries another one inside.
+
+        The quoted post is looked up like the post a reply answers: one the
+        author cannot read is answered exactly like one that does not exist.
+        """
+        quoted = await self._posts.lock_visible(quoted_post_id, viewer_id=author.id)
+        if quoted is None:
+            raise post_not_found()
+        if quoted.deleted:
+            raise ProblemError(
+                status=409,
+                code="post-deleted",
+                title="No se pudo citar",
+                detail="Esta publicación fue eliminada.",
+            )
+        quote = await self._posts.create(
+            author.id,
+            comment,
+            language=language,
+            quoted_post_id=quoted_post_id,
+            hashtags=hashtags,
+            mentions=mentions,
+        )
+        # Same transaction as the insert: either both land or neither does.
+        await self._posts.count_quote(quoted_post_id, 1)
+        await self._tell_the_mentioned(author_handle, quote, mentions)
+        return quote
 
     async def _tell_the_mentioned(
         self, author_handle: str | None, post: Post, mentions: Sequence[Mention]
@@ -288,6 +332,9 @@ class PostService:
         await self._retweets.remove_for_post(post_id)
         await self._bookmarks.remove_for_post(post_id)
         await self._posts.mark_deleted(post_id)
+        # The counter shows the quotes that can still be read, so a deleted one leaves it.
+        if post.quoted_post_id is not None:
+            await self._posts.count_quote(post.quoted_post_id, -1)
 
     async def get(self, post_id: uuid.UUID, viewer: Account) -> PostWithAuthor:
         """A single post, or `404` if it does not exist or the viewer cannot see it.

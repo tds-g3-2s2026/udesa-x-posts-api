@@ -311,6 +311,11 @@ class PostModel(Base):
     parent_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True), ForeignKey("posts.id"), default=None
     )
+    # The post this one quotes, if any. It keeps pointing there after the
+    # original is deleted: deleting is setting `deleted_at`, the row stays.
+    quoted_post_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("posts.id"), default=None
+    )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     content: Mapped[str] = mapped_column(String(280))
     # Detected when it is published. NULL on the posts older than the detection.
@@ -322,6 +327,7 @@ class PostModel(Base):
     likes_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     retweets_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     replies_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    quotes_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class PostHashtagModel(Base):
