@@ -5,6 +5,7 @@ fixture that applies the migrations is synchronous.
 """
 
 import asyncio
+import sys
 
 from alembic import command
 from alembic.config import Config
@@ -153,3 +154,78 @@ def test_bookmarks_migration_creates_the_bookmarks_table_and_drops_it_on_downgra
     command.downgrade(config, "0018_listas_del_follow")
     assert "bookmarks" not in asyncio.run(_tables())
     command.upgrade(config, "head")
+
+
+def test_concurrent_feed_index_build_allows_writes_and_recovers_after_interruption():
+    config = Config("alembic.ini")
+    command.downgrade(config, "0021_citas")
+
+    async def interrupt_build():
+        engine = create_async_engine(get_settings().database_url)
+        try:
+            async with engine.begin() as writer, engine.connect() as observer:
+                await writer.execute(text("LOCK TABLE retweets IN ROW EXCLUSIVE MODE"))
+                build = await asyncio.create_subprocess_exec(
+                    sys.executable,
+                    "-m",
+                    "alembic",
+                    "upgrade",
+                    "0022_feed_indexes",
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                try:
+                    async with asyncio.timeout(15):
+                        while True:
+                            pid = await observer.scalar(
+                                text("""
+                                SELECT pid FROM pg_stat_progress_create_index
+                                WHERE datname = current_database() AND relid = 'retweets'::regclass
+                                  AND phase = 'waiting for writers before build'
+                            """)
+                            )
+                            await observer.commit()
+                            if pid:
+                                break
+                            await asyncio.sleep(0.05)
+                    await observer.execute(text("SET LOCAL lock_timeout = '1s'"))
+                    await observer.execute(
+                        text("""
+                        WITH author AS (
+                            INSERT INTO user_profiles (id) VALUES (uuidv7()) RETURNING id
+                        ), post AS (
+                            INSERT INTO posts (author_id, content)
+                            SELECT id, 'feed migration' FROM author RETURNING id, author_id
+                        )
+                        INSERT INTO retweets (user_id, post_id) SELECT author_id, id FROM post
+                    """)
+                    )
+                    assert await observer.scalar(
+                        text("SELECT pg_cancel_backend(:pid)"), {"pid": pid}
+                    )
+                    _, error = await asyncio.wait_for(build.communicate(), 10)
+                    assert build.returncode != 0 and b"canceling statement" in error
+                    await observer.rollback()
+                finally:
+                    if build.returncode is None:
+                        build.kill()
+                        await build.wait()
+        finally:
+            await engine.dispose()
+
+    index_status = (
+        "SELECT indexrelid::regclass::text, indisvalid FROM pg_index "
+        "WHERE indexrelid::regclass::text IN ('ix_posts_feed_recent', 'ix_retweets_feed_recent') "
+        "ORDER BY 1"
+    )
+    try:
+        asyncio.run(interrupt_build())
+        assert asyncio.run(_fetch(index_status)) == [
+            ("ix_posts_feed_recent", True),
+            ("ix_retweets_feed_recent", False),
+        ]
+    finally:
+        command.upgrade(config, "head")
+    assert asyncio.run(_fetch(index_status)) == [
+        ("ix_posts_feed_recent", True),
+        ("ix_retweets_feed_recent", True),
+    ]

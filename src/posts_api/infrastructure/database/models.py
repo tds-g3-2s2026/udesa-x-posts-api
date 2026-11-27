@@ -282,6 +282,13 @@ class PostModel(Base):
         # the cursor reads: created_at, then id as the tiebreak. A plain index
         # on author_id alone would not be enough once the query also sorts.
         Index("ix_posts_author_created", "author_id", "created_at", "id"),
+        Index(
+            "ix_posts_feed_recent",
+            text("created_at DESC"),
+            text("id DESC"),
+            postgresql_include=["author_id"],
+            postgresql_where=text("parent_id IS NULL AND deleted_at IS NULL"),
+        ),
         # Reads one post's replies in the order the cursor walks them. Partial:
         # most posts are not replies, and the listing always names a parent, so
         # the rows with no parent would only make the index bigger.
@@ -430,6 +437,12 @@ class RetweetModel(Base):
     __tablename__ = "retweets"
     __table_args__ = (
         Index("ix_retweets_user_created", "user_id", "created_at", "post_id"),
+        Index(
+            "ix_retweets_feed_recent",
+            text("created_at DESC"),
+            text("post_id DESC"),
+            text("user_id DESC"),
+        ),
         Index("ix_retweets_post", "post_id"),
     )
 
