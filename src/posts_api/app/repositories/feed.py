@@ -69,6 +69,27 @@ class FeedRepository:
         """What `accounts` posted and retweeted, as `viewer_id` is allowed to read it."""
         sources = accounts.subquery()
         sharer = aliased(UserProfileModel)
+        post_filters = (
+            PostModel.deleted_at.is_(None),
+            visible_to(
+                viewer_id,
+                author_id=PostModel.author_id,
+                author_visibility=UserProfileModel.visibility,
+                author_deleted_at=UserProfileModel.deleted_at,
+                keeps_deleted_author=PostModel.parent_id.is_not(None),
+            ),
+            not_(muted_by_viewer(viewer_id, PostModel.author_id)),
+            in_feed_language_of(viewer_id),
+        )
+
+        def top_activity(statement: Select) -> Select:
+            columns = statement.selected_columns
+            position = (columns.activity_at, columns.post_id, columns.kind, columns.actor_id)
+            if cursor is not None:
+                cursor_position = tuple_(cursor.at, cursor.post_id, cursor.kind, cursor.actor_id)
+                statement = statement.where(tuple_(*position) < cursor_position)
+            return statement.order_by(*(column.desc() for column in position)).limit(limit + 1)
+
         originals = (
             select(
                 PostModel.id.label("post_id"),
@@ -78,19 +99,23 @@ class FeedRepository:
                 literal(None, type_=String).label("shared_by"),
             )
             .join(sources, sources.c.account_id == PostModel.author_id)
-            .where(PostModel.parent_id.is_(None))
+            .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
+            .where(PostModel.parent_id.is_(None), *post_filters)
         )
         shares = (
             select(
                 RetweetModel.post_id,
-                RetweetModel.created_at,
-                literal(1),
-                RetweetModel.user_id,
-                sharer.handle,
+                RetweetModel.created_at.label("activity_at"),
+                literal(1).label("kind"),
+                RetweetModel.user_id.label("actor_id"),
+                sharer.handle.label("shared_by"),
             )
             .join(sources, sources.c.account_id == RetweetModel.user_id)
             .join(sharer, sharer.id == RetweetModel.user_id)
+            .join(PostModel, PostModel.id == RetweetModel.post_id)
+            .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
             .where(
+                *post_filters,
                 visible_to(
                     viewer_id,
                     author_id=sharer.id,
@@ -101,7 +126,8 @@ class FeedRepository:
                 not_(muted_by_viewer(viewer_id, RetweetModel.user_id)),
             )
         )
-        activity = union_all(originals, shares).subquery()
+        # Each branch can contribute at most one page plus the lookahead row.
+        activity = union_all(top_activity(originals), top_activity(shares)).subquery()
         position = (
             activity.c.activity_at,
             activity.c.post_id,
@@ -124,27 +150,7 @@ class FeedRepository:
             )
             .join(activity, activity.c.post_id == PostModel.id)
             .join(UserProfileModel, UserProfileModel.id == PostModel.author_id)
-            .where(
-                PostModel.deleted_at.is_(None),
-                visible_to(
-                    viewer_id,
-                    author_id=PostModel.author_id,
-                    author_visibility=UserProfileModel.visibility,
-                    author_deleted_at=UserProfileModel.deleted_at,
-                    # A reply of a closed account that somebody retweeted stays.
-                    keeps_deleted_author=PostModel.parent_id.is_not(None),
-                ),
-                # A muted author leaves too when somebody else retweets them.
-                not_(muted_by_viewer(viewer_id, PostModel.author_id)),
-                # On the post and not on the activity: a retweet goes by the
-                # language of what it shares.
-                in_feed_language_of(viewer_id),
-            )
         )
-        if cursor is not None:
-            statement = statement.where(
-                tuple_(*position) < tuple_(cursor.at, cursor.post_id, cursor.kind, cursor.actor_id)
-            )
         statement = statement.order_by(*(column.desc() for column in position)).limit(limit + 1)
         rows = (await self._session.execute(statement)).all()
         page = rows[:limit]
