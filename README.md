@@ -1,5 +1,7 @@
 # UdeSA-X Posts API
 
+[![Cobertura](https://codecov.io/gh/tds-g3-2s2026/udesa-x-posts-api/branch/main/graph/badge.svg)](https://codecov.io/gh/tds-g3-2s2026/udesa-x-posts-api)
+
 Microservicio backend responsable de la lógica core de la red social: creación de publicaciones, retweets, likes, respuestas y la generación del feed cronológico.
 
 ## Cómo correrlo
