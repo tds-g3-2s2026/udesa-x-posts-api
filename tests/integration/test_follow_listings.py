@@ -6,6 +6,7 @@ from posts_api.infrastructure.database.models import FollowModel, UserProfileMod
 from posts_api.main import app
 from tests.conftest import requires_services
 from tests.integration.conftest import given_a_profile, handle_of, signed_in_as
+from tests.integration.test_profile_images import key_in, put_avatar
 
 pytestmark = requires_services
 
@@ -66,12 +67,28 @@ async def test_e3_h3_ca1_listings_carry_the_fields_the_screen_needs(api):
     assert [one["handle"] for one in body["items"]] == [handle_of(b), handle_of(a)]
     row = body["items"][0]
     assert set(row) == {"id", "handle", "displayName", "avatarUrl", "following", "createdAt"}
-    # displayName and avatarUrl live in users-api and nothing copies them here
-    # yet: present and null, not missing, so the screen can read the final
-    # shape today and get the real value later without a contract change.
+    # displayName lives in users-api and nothing copies it here yet: present and
+    # null, not missing. Without a photo, avatarUrl is null too, and the app
+    # draws the default avatar.
     assert (row["displayName"], row["avatarUrl"]) == (None, None)
     assert row["following"] is False
     assert body["nextCursor"] is None
+
+
+async def test_e3_h3_ca1_both_listings_carry_the_photo_of_each_account(api):
+    target, follower, followee = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(target)
+    base = datetime.now(UTC)
+    await insert_follow(follower, target, base)
+    await insert_follow(target, followee, base)
+    follower_photo = key_in((await put_avatar(api, follower)).json()["avatarUrl"])
+    followee_photo = key_in((await put_avatar(api, followee)).json()["avatarUrl"])
+
+    followers = await api.get(f"/users/{target}/followers", headers=signed_in_as(target))
+    following = await api.get(f"/users/{target}/following", headers=signed_in_as(target))
+
+    assert key_in(followers.json()["items"][0]["avatarUrl"]) == follower_photo
+    assert key_in(following.json()["items"][0]["avatarUrl"]) == followee_photo
 
 
 async def test_following_lists_who_the_account_follows(api):

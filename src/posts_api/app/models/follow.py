@@ -81,15 +81,17 @@ class FollowListItem:
     """One row of the followers or following screens.
 
     Not the same as `Follow`: that is the relationship itself, and this is the
-    relationship plus the handle of the other account and whether the caller
-    already follows it, which is what the screen needs to paint the row and
-    its button without a second call per line.
+    relationship plus the handle and photo of the other account and whether the
+    caller already follows it, which is what the screen needs to paint the row
+    and its button without a second call per line.
     """
 
     id: uuid.UUID
     handle: str | None
     followed_by_viewer: bool
     created_at: datetime
+    # Where the photo is in the bucket, `None` for an account without one.
+    avatar_key: str | None = None
 
 
 @dataclass(frozen=True)

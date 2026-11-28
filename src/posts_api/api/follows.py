@@ -3,13 +3,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
-from posts_api.api.deps import CurrentUserDep, OutboxDep, RedisDep, SessionDep
+from posts_api.api.deps import CurrentUserDep, ImageStorageDep, OutboxDep, RedisDep, SessionDep
 from posts_api.api.schemas.follow_listings import FollowListItemSummary, SuggestedAccountSummary
 from posts_api.api.schemas.pagination import CursorPage
+from posts_api.app.models.follow import FollowListItem
 from posts_api.app.repositories.blocks import BlockRepository
 from posts_api.app.repositories.follow_listings import FollowListingRepository
 from posts_api.app.repositories.follow_requests import FollowRequestRepository
 from posts_api.app.repositories.follows import FollowRepository
+from posts_api.app.repositories.image_storage import ImageStorage, signed_url_or_none
 from posts_api.app.repositories.mutes import MuteRepository
 from posts_api.app.services.follow_listings import FollowListingService
 from posts_api.app.services.follows import FollowService
@@ -84,13 +86,12 @@ async def followers(
     user_id: uuid.UUID,
     current_user: CurrentUserDep,
     service: ListingServiceDep,
+    storage: ImageStorageDep,
     cursor: Annotated[str | None, Query()] = None,
 ) -> CursorPage[FollowListItemSummary]:
     """Whoever follows this account. Reading it also puts the caller on the graph."""
     items, next_cursor = await service.followers_of(user_id, current_user, cursor=cursor)
-    return CursorPage(
-        items=[FollowListItemSummary.of(one) for one in items], next_cursor=next_cursor
-    )
+    return CursorPage(items=await _rows(items, storage), next_cursor=next_cursor)
 
 
 @router.get("/{user_id}/following")
@@ -98,10 +99,17 @@ async def following(
     user_id: uuid.UUID,
     current_user: CurrentUserDep,
     service: ListingServiceDep,
+    storage: ImageStorageDep,
     cursor: Annotated[str | None, Query()] = None,
 ) -> CursorPage[FollowListItemSummary]:
     """Whoever this account follows."""
     items, next_cursor = await service.following_of(user_id, current_user, cursor=cursor)
-    return CursorPage(
-        items=[FollowListItemSummary.of(one) for one in items], next_cursor=next_cursor
-    )
+    return CursorPage(items=await _rows(items, storage), next_cursor=next_cursor)
+
+
+async def _rows(items: list[FollowListItem], storage: ImageStorage) -> list[FollowListItemSummary]:
+    """Each row with its photo signed. A photo that cannot be signed goes out as none."""
+    return [
+        FollowListItemSummary.of(one, avatar_url=await signed_url_or_none(storage, one.avatar_key))
+        for one in items
+    ]
