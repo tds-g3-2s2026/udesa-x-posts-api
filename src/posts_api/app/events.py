@@ -33,7 +33,7 @@ ADMIN_ACTION_RECORDED = "admin.action_recorded.v1"
 # failure that may pass (the database is down) is not an outcome: it is raised.
 Outcome = Literal["ack", "reject"]
 
-InteractionKind = Literal["like", "retweet", "reply"]
+InteractionKind = Literal["like", "retweet", "reply", "quote"]
 
 
 class InvalidEventError(Exception):
@@ -182,13 +182,14 @@ def interaction_created(
     *,
     actor_handle: str | None,
     reply_id: uuid.UUID | None = None,
+    quote_id: uuid.UUID | None = None,
     now: datetime,
 ) -> Event:
-    """Someone liked, shared or answered a post: its author is who gets told.
+    """Someone liked, shared, answered or quoted a post: its author is who gets told.
 
     `post_id` is always the post that received the interaction, never the reply
-    itself, so a notification opens the post the author wrote. `reply_id` is
-    set only for a reply, which the schema enforces.
+    or the quote itself, so the event names whose post it was. `reply_id` is set
+    only for a reply and `quote_id` only for a quote, which the schema enforces.
     """
     return build_event(
         INTERACTION_CREATED,
@@ -199,6 +200,7 @@ def interaction_created(
             "post_id": str(post_id),
             "post_author_id": str(post_author_id),
             "reply_id": str(reply_id) if reply_id is not None else None,
+            "quote_id": str(quote_id) if quote_id is not None else None,
         },
         now=now,
     )

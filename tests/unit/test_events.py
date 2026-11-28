@@ -135,7 +135,7 @@ def test_an_invitation_missing_a_field_is_refused(field):
 
 
 @pytest.mark.parametrize("kind", ["like", "retweet"])
-def test_an_interaction_without_a_reply_carries_a_null_reply_id(kind):
+def test_an_interaction_without_a_reply_or_a_quote_carries_null_ids(kind):
     actor, post, author = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     now = datetime(2026, 11, 8, 18, 42, 10, tzinfo=UTC)
 
@@ -152,6 +152,7 @@ def test_an_interaction_without_a_reply_carries_a_null_reply_id(kind):
         "post_id": str(post),
         "post_author_id": str(author),
         "reply_id": None,
+        "quote_id": None,
     }
 
 
@@ -171,6 +172,33 @@ def test_a_reply_interaction_carries_the_reply_and_an_unknown_handle_is_null():
 def test_a_reply_interaction_without_its_reply_breaks_the_schema():
     event = interaction_created(
         "reply",
+        uuid.uuid4(),
+        uuid.uuid4(),
+        uuid.uuid4(),
+        actor_handle=None,
+        now=datetime.now(UTC),
+    )
+
+    with pytest.raises(ValidationError):
+        INTERACTION_CREATED_SCHEMA.validate(event.envelope)
+
+
+def test_a_quote_interaction_carries_the_quote_and_the_quoted_post():
+    actor, post, author, quote = (uuid.uuid4() for _ in range(4))
+
+    event = interaction_created(
+        "quote", actor, post, author, actor_handle="@ana", quote_id=quote, now=datetime.now(UTC)
+    )
+
+    INTERACTION_CREATED_SCHEMA.validate(event.envelope)
+    assert event.envelope["data"]["post_id"] == str(post)
+    assert event.envelope["data"]["reply_id"] is None
+    assert event.envelope["data"]["quote_id"] == str(quote)
+
+
+def test_a_quote_interaction_without_its_quote_breaks_the_schema():
+    event = interaction_created(
+        "quote",
         uuid.uuid4(),
         uuid.uuid4(),
         uuid.uuid4(),

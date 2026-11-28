@@ -1,4 +1,4 @@
-"""What liking, sharing and answering a post leave in the outbox.
+"""What liking, sharing, answering and quoting a post leave in the outbox.
 
 The publisher is covered in `test_outbox_publisher.py`. Here the app points at a
 broker nobody listens on (see `tests/conftest.py`), so the events stay in the
@@ -17,6 +17,7 @@ from tests.integration.conftest import given_a_profile, handle_of
 from tests.integration.test_likes import like, publish
 from tests.integration.test_mutes import mute
 from tests.integration.test_outbox_follow import count, outbox_events
+from tests.integration.test_quotes import quote
 from tests.integration.test_replies import reply
 from tests.integration.test_retweets import share
 
@@ -40,6 +41,7 @@ async def test_e4_h2_ca1_like_writes_interaction_created(api):
         "post_id": post,
         "post_author_id": str(author),
         "reply_id": None,
+        "quote_id": None,
     }
 
 
@@ -60,6 +62,7 @@ async def test_e4_h2_ca1_retweet_writes_interaction_created(api):
         "post_id": post,
         "post_author_id": str(author),
         "reply_id": None,
+        "quote_id": None,
     }
 
 
@@ -80,6 +83,28 @@ async def test_e4_h2_ca1_reply_writes_interaction_created(api):
         "post_id": post,
         "post_author_id": str(author),
         "reply_id": response.json()["id"],
+        "quote_id": None,
+    }
+
+
+async def test_e4_h2_ca1_quote_writes_interaction_created(api):
+    author, fan = uuid.uuid4(), uuid.uuid4()
+    await given_a_profile(author)
+    post = await publish(api, author)
+
+    response = await quote(api, fan, post)
+
+    assert response.status_code == 201
+    [event] = await outbox_events()
+    INTERACTION_CREATED.validate(event)
+    assert event["data"] == {
+        "kind": "quote",
+        "actor_id": str(fan),
+        "actor_handle": handle_of(fan),
+        "post_id": post,
+        "post_author_id": str(author),
+        "reply_id": None,
+        "quote_id": response.json()["id"],
     }
 
 
@@ -92,6 +117,7 @@ async def test_e4_h2_ca2_payload_carries_post_id(api):
     # names that one, with the author of the reply as its recipient.
     await like(api, author, answered)
     await share(api, author, answered)
+    quoted = (await quote(api, fan, post)).json()["id"]
 
     events = [event["data"] for event in await outbox_events()]
 
@@ -99,9 +125,11 @@ async def test_e4_h2_ca2_payload_carries_post_id(api):
         ("reply", post, str(author)),
         ("like", answered, str(fan)),
         ("retweet", answered, str(fan)),
+        ("quote", post, str(author)),
     ]
-    # Only a reply carries the post it created.
-    assert [data["reply_id"] for data in events] == [answered, None, None]
+    # Only a reply carries the post it created, and only a quote the quote.
+    assert [data["reply_id"] for data in events] == [answered, None, None, None]
+    assert [data["quote_id"] for data in events] == [None, None, None, quoted]
 
 
 async def test_e4_h2_ca1_like_writes_outbox_row_in_same_transaction(api, monkeypatch):
@@ -156,6 +184,7 @@ async def test_a_muted_account_still_interacts_but_the_author_is_not_told(api):
 
     assert (await like(api, muted, post)).status_code == 204
     assert (await share(api, muted, post)).status_code == 201
+    assert (await quote(api, muted, post)).status_code == 201
     answered = await reply(api, muted, post)
 
     assert answered.status_code == 201
@@ -185,6 +214,7 @@ async def test_interacting_with_your_own_post_queues_nothing(api):
     assert (await like(api, author, post)).status_code == 204
     assert (await share(api, author, post)).status_code == 201
     assert (await reply(api, author, post)).status_code == 201
+    assert (await quote(api, author, post)).status_code == 201
 
     assert await count(LikeModel) == 1
     assert await outbox_events() == []

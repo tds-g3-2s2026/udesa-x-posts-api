@@ -267,6 +267,18 @@ class PostService:
         )
         # Same transaction as the insert: either both land or neither does.
         await self._posts.count_quote(quoted_post_id, 1)
+        # Like a reply, the event names the quoted post and its author, who is the
+        # one told; the quote travels as `quote_id`, the post the notice opens.
+        await queue_interaction(
+            self._outbox,
+            self._mutes,
+            "quote",
+            actor_id=author.id,
+            actor_handle=author_handle,
+            post_id=quoted_post_id,
+            post_author_id=quoted.author_id,
+            quote_id=quote.id,
+        )
         await self._tell_the_mentioned(author_handle, quote, mentions)
         return quote
 
