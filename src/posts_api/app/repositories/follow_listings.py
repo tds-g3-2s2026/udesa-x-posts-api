@@ -71,7 +71,12 @@ class FollowListingRepository:
         of a page unique once `created_at` is fixed.
         """
         base = (
-            select(other_id.label("account_id"), FollowModel.created_at, UserProfileModel.handle)
+            select(
+                other_id.label("account_id"),
+                FollowModel.created_at,
+                UserProfileModel.handle,
+                UserProfileModel.avatar_key,
+            )
             .select_from(FollowModel)
             .join(UserProfileModel, UserProfileModel.id == other_id)
             .where(account_filter)
@@ -95,6 +100,7 @@ class FollowListingRepository:
                 handle=row.handle,
                 followed_by_viewer=row.account_id in already_followed,
                 created_at=row.created_at,
+                avatar_key=row.avatar_key,
             )
             for row in rows
         ]

@@ -14,10 +14,11 @@ class FollowListItemSummary(BaseModel):
 
     id: uuid.UUID
     handle: str | None
-    # Neither field is resolved yet: both live in another service, and
-    # nothing copies them here. Always null for now, present so the screen
-    # can already read the final shape and swap the placeholder in later.
+    # The display name lives in users-api and nothing copies it here: always
+    # null for now, present so the screen already reads the final shape.
     display_name: str | None = Field(default=None, serialization_alias="displayName")
+    # The photo, signed like the one on each post; null without one, and the
+    # app draws the default avatar.
     avatar_url: str | None = Field(default=None, serialization_alias="avatarUrl")
     # Whether whoever is asking already follows this account, not whether this
     # account follows them: that is what lets the row's button read "Seguir"
@@ -26,10 +27,11 @@ class FollowListItemSummary(BaseModel):
     created_at: datetime = Field(serialization_alias="createdAt")
 
     @classmethod
-    def of(cls, item: FollowListItem) -> "FollowListItemSummary":
+    def of(cls, item: FollowListItem, *, avatar_url: str | None = None) -> "FollowListItemSummary":
         return cls(
             id=item.id,
             handle=item.handle,
+            avatar_url=avatar_url,
             following=item.followed_by_viewer,
             created_at=item.created_at,
         )
