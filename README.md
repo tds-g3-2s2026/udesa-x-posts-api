@@ -327,12 +327,13 @@ Cuando una cuenta empieza a seguir a otra, `posts-api` publica `follow.created.v
 solicitud aprobada por una cuenta protegida; una solicitud pendiente o rechazada no publica nada.
 `notifications-api` lo consume para mandar el push al seguido.
 
-Un like, un retweet o una respuesta publican `interaction.created.v1` (`kind` `like`, `retweet` o
-`reply`), para que `notifications-api` le avise al autor del post. `post_id` es siempre el post que
-recibió la interacción (en una respuesta, el respondido) y `reply_id` lleva la respuesta nueva. Sale
-solo cuando la interacción es nueva: un like o retweet repetido no publica otra vez. No sale si el
-autor del post es quien interactúa, ni si el autor silenció a esa cuenta: la interacción se guarda
-igual, sin aviso, como un follow de una cuenta silenciada.
+Un like, un retweet, una respuesta o una cita publican `interaction.created.v1` (`kind` `like`,
+`retweet`, `reply` o `quote`), para que `notifications-api` le avise al autor del post. `post_id` es
+siempre el post que recibió la interacción (en una respuesta, el respondido; en una cita, el citado),
+`reply_id` lleva la respuesta nueva y `quote_id` la cita nueva. Sale solo cuando la interacción es
+nueva: un like o retweet repetido no publica otra vez. No sale si el autor del post es quien
+interactúa, ni si el autor silenció a esa cuenta: la interacción se guarda igual, sin aviso, como un
+follow de una cuenta silenciada.
 
 Una mención en un post o en una respuesta publica `mention.created.v1`, una vez por cada cuenta
 mencionada (`mentioned_id`), para que `notifications-api` se lo avise. Lleva el post que contiene

@@ -1,4 +1,4 @@
-"""Telling somebody that an account liked, shared, answered or mentioned them.
+"""Telling somebody that an account liked, shared, answered, quoted or mentioned them.
 
 The reasons to stay quiet are written once, here: a copy per service would let them
 drift apart.
@@ -34,6 +34,7 @@ async def queue_interaction(
     post_id: uuid.UUID,
     post_author_id: uuid.UUID,
     reply_id: uuid.UUID | None = None,
+    quote_id: uuid.UUID | None = None,
 ) -> None:
     """Write `interaction.created.v1` in the caller's transaction, unless nobody should hear of it.
 
@@ -50,6 +51,7 @@ async def queue_interaction(
             post_author_id,
             actor_handle=actor_handle,
             reply_id=reply_id,
+            quote_id=quote_id,
             now=datetime.now(UTC),
         )
     )
